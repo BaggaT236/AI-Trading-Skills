@@ -2,6 +2,17 @@
 .DS_Store
 Thumbs.db
 
+# Node.js / TypeScript
+node_modules/
+package-lock.json
+dist/
+*.tsbuildinfo
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
 # Python cache & build artifacts
 __pycache__/
 .pytest_cache/
@@ -34,15 +45,11 @@ logs/
 reports/
 reviews/
 
-# Stray screener reports if a script is run with --output-dir . (default is reports/)
 canslim_screener_*.json
 canslim_screener_*.md
 
-# Per-symbol runtime state (e.g. parabolic-short SSR carryover files).
-# Kept out of commits so production state never leaks into the repo.
 state/
 
 # CI artifacts
 htmlcov/
 .coverage
-# .secrets.baseline is tracked — needed by detect-secrets pre-commit hook
