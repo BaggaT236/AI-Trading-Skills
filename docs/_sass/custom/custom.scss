@@ -1,0 +1,158 @@
+// Hero section
+.hero {
+  text-align: center;
+  padding: 3rem 1rem;
+  margin-bottom: 2rem;
+
+  .hero-mantra {
+    font-size: 1.1rem;
+    font-style: italic;
+    color: #586069;
+    margin-bottom: 0.5rem;
+  }
+
+  .hero-tagline {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #24292e;
+    margin-bottom: 1.5rem;
+  }
+}
+
+// Language selector (landing page)
+.lang-selector {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin: 2rem 0;
+
+  .lang-btn {
+    display: inline-block;
+    padding: 1rem 2.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+
+    &.lang-btn-en {
+      background-color: #2f6feb;
+      color: #fff;
+
+      &:hover {
+        background-color: #1a56db;
+      }
+    }
+
+    &.lang-btn-ja {
+      background-color: #fff;
+      color: #2f6feb;
+      border: 2px solid #2f6feb;
+
+      &:hover {
+        background-color: #f0f6ff;
+      }
+    }
+  }
+}
+
+// Category cards
+.category-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.category-card {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  transition: box-shadow 0.2s ease;
+
+  &:hover {
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  h3 {
+    margin-top: 0;
+    font-size: 1rem;
+  }
+
+  p {
+    font-size: 0.875rem;
+    color: #586069;
+    margin-bottom: 0;
+  }
+}
+
+// Steps
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+
+  .step {
+    text-align: center;
+    padding: 1rem;
+
+    .step-number {
+      display: inline-block;
+      width: 2rem;
+      height: 2rem;
+      line-height: 2rem;
+      border-radius: 50%;
+      background-color: #2f6feb;
+      color: #fff;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    h4 {
+      margin: 0.5rem 0;
+    }
+
+    p {
+      font-size: 0.875rem;
+      color: #586069;
+    }
+  }
+}
+
+// API badge styles
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+
+  &.badge-free {
+    background-color: #dafbe1;
+    color: #116329;
+  }
+
+  &.badge-api {
+    background-color: #fff8c5;
+    color: #6a5100;
+  }
+
+  &.badge-optional {
+    background-color: #ddf4ff;
+    color: #0969da;
+  }
+
+  &.badge-workflow {
+    background-color: #f3e8ff;
+    color: #6e40c9;
+  }
+}
+
+// api_required callout
+.callout.api_required {
+  border-left-color: #d4a72c;
+  background-color: #fff8c5;
+}

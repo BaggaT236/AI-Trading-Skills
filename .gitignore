@@ -1,0 +1,48 @@
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Python cache & build artifacts
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.pyo
+*.so
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tool configurations
+.idea/
+.vscode/
+.claude/
+.envrc
+.mcp.json
+
+# Logs & temp
+logs/
+*.log
+*.tmp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Generated reports
+reports/
+reviews/
+
+# Stray screener reports if a script is run with --output-dir . (default is reports/)
+canslim_screener_*.json
+canslim_screener_*.md
+
+# Per-symbol runtime state (e.g. parabolic-short SSR carryover files).
+# Kept out of commits so production state never leaks into the repo.
+state/
+
+# CI artifacts
+htmlcov/
+.coverage
+# .secrets.baseline is tracked — needed by detect-secrets pre-commit hook

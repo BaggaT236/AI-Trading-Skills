@@ -1,0 +1,174 @@
+schema_version: 1
+id: swing-opportunity-daily
+display_name: Swing Opportunity Daily
+cadence: daily
+estimated_minutes: 40
+target_users:
+  - part-time-swing-trader
+difficulty: intermediate
+api_profile: fmp-required
+
+when_to_run: >-
+  Only after market-regime-daily has produced a non-restrictive exposure
+  decision. Identifies swing trade candidates and builds entry plans.
+when_not_to_run: >-
+  Do not run when the latest market-regime-daily exposure_decision is
+  cash-priority or restrictive. Do not use as a standalone screener without
+  the regime gate.
+
+required_skills:
+  - vcp-screener
+  - technical-analyst
+  - position-sizer
+  - trader-memory-core
+optional_skills:
+  - stockbee-momentum-burst-screener
+  - stockbee-exhaustion-hammer-screener
+  - canslim-screener
+  - breakout-trade-planner
+  - theme-detector
+
+# Informational only — validator does NOT enforce inter-workflow ordering.
+# See docs/dev/metadata-and-workflow-schema.md § 2.4.
+prerequisite_workflows:
+  - id: market-regime-daily
+    artifact: exposure_decision
+    rationale: >-
+      New swing trade risk requires a non-restrictive exposure decision.
+      Skip this workflow on cash-priority or restrictive days.
+
+artifacts:
+  - id: vcp_candidates
+    produced_by_step: 1
+    required: true
+  - id: momentum_burst_candidates
+    produced_by_step: 2
+    required: false
+  - id: exhaustion_hammer_candidates
+    produced_by_step: 3
+    required: false
+  - id: canslim_candidates
+    produced_by_step: 4
+    required: false
+  - id: theme_candidates
+    produced_by_step: 5
+    required: false
+  - id: validated_setups
+    produced_by_step: 6
+    required: true
+  - id: position_sizing
+    produced_by_step: 7
+    required: true
+  - id: trade_plans
+    produced_by_step: 8
+    required: false
+    downstream_hints:
+      - trade-memory-loop
+  - id: candidate_journal_entry
+    produced_by_step: 9
+    required: true
+    downstream_hints:
+      - trade-memory-loop
+
+steps:
+  - step: 1
+    name: Run VCP screener
+    skill: vcp-screener
+    produces:
+      - vcp_candidates
+    decision_gate: false
+
+  - step: 2
+    name: Run Stockbee momentum burst screener
+    skill: stockbee-momentum-burst-screener
+    optional: true
+    produces:
+      - momentum_burst_candidates
+    decision_gate: false
+
+  - step: 3
+    name: Run Stockbee exhaustion hammer screener
+    skill: stockbee-exhaustion-hammer-screener
+    optional: true
+    produces:
+      - exhaustion_hammer_candidates
+    decision_gate: false
+
+  - step: 4
+    name: Run CANSLIM screener
+    skill: canslim-screener
+    optional: true
+    produces:
+      - canslim_candidates
+    decision_gate: false
+
+  - step: 5
+    name: Theme detection cross-check
+    skill: theme-detector
+    optional: true
+    produces:
+      - theme_candidates
+    decision_gate: false
+
+  - step: 6
+    name: Validate setups on weekly chart
+    skill: technical-analyst
+    consumes:
+      - vcp_candidates
+      - momentum_burst_candidates
+      - exhaustion_hammer_candidates
+      - canslim_candidates
+      - theme_candidates
+    produces:
+      - validated_setups
+    decision_gate: true
+    decision_question: >-
+      Which candidates have a clean weekly setup (Stage 2 uptrend, tight base,
+      or Stockbee-style range expansion from a controlled base) and pass the
+      manual chart review? For exhaustion hammers, confirm the pullback is not
+      thesis-breaking and risk to the day low is acceptable. Reject candidates
+      that don't pass.
+
+  - step: 7
+    name: Calculate position size
+    skill: position-sizer
+    consumes:
+      - validated_setups
+    produces:
+      - position_sizing
+    decision_gate: false
+
+  - step: 8
+    name: Build entry plan
+    skill: breakout-trade-planner
+    optional: true
+    consumes:
+      - validated_setups
+      - position_sizing
+    produces:
+      - trade_plans
+    decision_gate: false
+
+  - step: 9
+    name: Register thesis in journal
+    skill: trader-memory-core
+    consumes:
+      - position_sizing
+      - trade_plans
+    produces:
+      - candidate_journal_entry
+    decision_gate: true
+    decision_question: >-
+      For each candidate that survived validation, register the thesis with
+      entry / stop / target. Confirm risk per trade matches position-sizer
+      output and total portfolio heat is within budget.
+
+manual_review:
+  - Confirm market-regime-daily exposure_decision allows new risk before acting.
+  - Reject any candidate where weekly setup is unclear, even if screener passed.
+  - Treat Stockbee momentum burst output as candidate generation only; require chart validation and risk-distance review.
+  - Treat Stockbee exhaustion hammer output as candidate generation only; confirm the pullback is not caused by a thesis-breaking news event and verify risk to the day low.
+  - Verify total portfolio heat is within budget before placing any order.
+  - All orders are placed manually at the broker; no auto-execution.
+
+journal_destination: trader-memory-core

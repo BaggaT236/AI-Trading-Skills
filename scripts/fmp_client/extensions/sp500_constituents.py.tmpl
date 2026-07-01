@@ -1,0 +1,18 @@
+    def get_sp500_constituents(self) -> Optional[list[dict]]:
+        """Fetch S&P 500 constituent list.
+
+        Returns:
+            List of dicts with keys: symbol, name, sector, subSector
+            or None on failure.
+        """
+        cache_key = "sp500_constituents"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        # Migrate hardcoded v3 URL to /stable (this method bypasses the
+        # _FMP_ENDPOINTS stable→v3 fallback list, so rewrite at the call site).
+        url, params = v3_to_stable(f"{self.BASE_URL}/sp500_constituent")
+        data = self._rate_limited_get(url, params)
+        if data:
+            self.cache[cache_key] = data
+        return data

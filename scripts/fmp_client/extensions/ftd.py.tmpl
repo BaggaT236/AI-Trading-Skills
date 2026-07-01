@@ -1,0 +1,12 @@
+    def calculate_ema(self, prices: list[float], period: int) -> float:
+        """Calculate Exponential Moving Average from a list of prices (most recent first)"""
+        if len(prices) < period:
+            return sum(prices) / len(prices)
+
+        prices_reversed = prices[::-1]
+        sma = sum(prices_reversed[:period]) / period
+        ema = sma
+        k = 2 / (period + 1)
+        for price in prices_reversed[period:]:
+            ema = price * k + ema * (1 - k)
+        return ema

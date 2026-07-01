@@ -1,0 +1,103 @@
+schema_version: 1
+id: core-portfolio-weekly
+display_name: Core Portfolio Weekly
+cadence: weekly
+estimated_minutes: 60
+target_users:
+  - long-term-investor
+  - dividend-investor
+difficulty: beginner
+api_profile: mixed
+
+when_to_run: >-
+  Once per week, typically on Saturday or Sunday before next week's market
+  open. Reviews long-term holdings, dividend positions, and overall allocation.
+when_not_to_run: >-
+  Do not run as a daily routine. Daily portfolio churn defeats the long-term
+  framing of this workflow.
+
+required_skills:
+  - portfolio-manager
+  - trader-memory-core
+optional_skills:
+  - kanchi-dividend-review-monitor
+  - value-dividend-screener
+  - kanchi-dividend-us-tax-accounting
+
+artifacts:
+  - id: holdings_snapshot
+    produced_by_step: 1
+    required: true
+    downstream_hints:
+      - monthly-performance-review
+  - id: allocation_report
+    produced_by_step: 2
+    required: true
+  - id: dividend_review_findings
+    produced_by_step: 3
+    required: false
+  - id: rebalance_actions
+    produced_by_step: 4
+    required: true
+  - id: weekly_journal_entry
+    produced_by_step: 5
+    required: true
+
+steps:
+  - step: 1
+    name: Fetch holdings snapshot
+    skill: portfolio-manager
+    produces:
+      - holdings_snapshot
+    decision_gate: false
+
+  - step: 2
+    name: Review allocation and concentration
+    skill: portfolio-manager
+    consumes:
+      - holdings_snapshot
+    produces:
+      - allocation_report
+    decision_gate: true
+    decision_question: >-
+      Are sector and single-name concentrations within target bands? If not,
+      what specific reallocation does the trader propose?
+
+  - step: 3
+    name: Check dividend health (T1-T5 anomaly check)
+    skill: kanchi-dividend-review-monitor
+    optional: true
+    consumes:
+      - holdings_snapshot
+    produces:
+      - dividend_review_findings
+    decision_gate: false
+
+  - step: 4
+    name: Decide rebalance actions
+    skill: portfolio-manager
+    consumes:
+      - allocation_report
+      - dividend_review_findings
+    produces:
+      - rebalance_actions
+    decision_gate: true
+    decision_question: >-
+      Which rebalance actions (if any) will be executed next week? Confirm
+      explicit buy / sell / hold list with sizing.
+
+  - step: 5
+    name: Journal the weekly review
+    skill: trader-memory-core
+    consumes:
+      - rebalance_actions
+    produces:
+      - weekly_journal_entry
+    decision_gate: false
+
+manual_review:
+  - Confirm holdings snapshot reflects the actual brokerage state (Alpaca or CSV).
+  - Confirm rebalance actions are entered manually at the broker, not auto-executed.
+  - If dividend_review_findings flags T1-T5 issues, defer additional buys until resolved.
+
+journal_destination: trader-memory-core

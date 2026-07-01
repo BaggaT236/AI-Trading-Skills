@@ -1,0 +1,102 @@
+schema_version: 1
+id: stockbee-fluency-loop
+display_name: Stockbee Setup Fluency Loop
+cadence: daily
+estimated_minutes: 20
+target_users:
+  - part-time-swing-trader
+  - growth-investor
+difficulty: intermediate
+api_profile: no-api-basic
+
+when_to_run: >-
+  After stockbee-momentum-burst-screener produces candidate reports, and again
+  after 3/5 trading-day windows have matured. Builds a model book of Stockbee
+  Momentum Burst examples so the trader can improve setup recognition.
+when_not_to_run: >-
+  Do not use as an execution workflow or signal service. Do not change trading
+  rules from tiny samples; require enough matured examples and manual chart
+  review before promoting or filtering a setup tag.
+
+required_skills:
+  - stockbee-setup-fluency-trainer
+optional_skills:
+  - trader-memory-core
+  - signal-postmortem
+  - backtest-expert
+
+artifacts:
+  - id: model_book_ingest
+    produced_by_step: 1
+    required: true
+  - id: matured_setup_outcomes
+    produced_by_step: 2
+    required: true
+  - id: setup_fluency_summary
+    produced_by_step: 3
+    required: true
+    downstream_hints:
+      - monthly-performance-review
+  - id: rule_candidates
+    produced_by_step: 3
+    required: false
+    downstream_hints:
+      - monthly-performance-review
+  - id: accepted_lessons_log
+    produced_by_step: 4
+    required: false
+    downstream_hints:
+      - monthly-performance-review
+
+steps:
+  - step: 1
+    name: Ingest latest Stockbee momentum burst candidates
+    skill: stockbee-setup-fluency-trainer
+    produces:
+      - model_book_ingest
+    decision_gate: false
+
+  - step: 2
+    name: Update matured 3-day and 5-day outcomes
+    skill: stockbee-setup-fluency-trainer
+    consumes:
+      - model_book_ingest
+    produces:
+      - matured_setup_outcomes
+    decision_gate: false
+
+  - step: 3
+    name: Summarize setup cohorts and rule candidates
+    skill: stockbee-setup-fluency-trainer
+    consumes:
+      - matured_setup_outcomes
+    produces:
+      - setup_fluency_summary
+      - rule_candidates
+    decision_gate: true
+    decision_question: >-
+      Which setup tags have enough matured examples to promote, downgrade, or
+      continue monitoring? Require representative chart review before changing
+      trade rules.
+
+  - step: 4
+    name: Log accepted lessons
+    skill: trader-memory-core
+    optional: true
+    consumes:
+      - setup_fluency_summary
+      - rule_candidates
+    produces:
+      - accepted_lessons_log
+    decision_gate: true
+    decision_question: >-
+      Which findings are accepted as operating-rule changes, and which remain
+      journal-only observations pending more examples?
+
+manual_review:
+  - Inspect representative winner and failure charts before accepting a rule change.
+  - Separate evidence from execution decisions; this workflow records setup behavior, not actual P&L.
+  - Keep sample-size thresholds explicit, especially when market regime changes.
+  - Feed accepted lessons into monthly-performance-review rather than adding ad-hoc rules daily.
+
+journal_destination: trader-memory-core

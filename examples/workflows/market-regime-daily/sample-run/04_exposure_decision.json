@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-01-15T13:05:00+00:00",
+  "exposure_ceiling_pct": 48,
+  "bias": "NEUTRAL",
+  "participation": "BROAD",
+  "recommendation": "REDUCE_ONLY",
+  "confidence": "LOW",
+  "composite_score": 49.0,
+  "component_scores": {
+    "breadth_score": 66,
+    "uptrend_score": 72
+  },
+  "inputs_provided": [
+    "breadth",
+    "uptrend"
+  ],
+  "inputs_missing": [
+    "regime",
+    "top_risk",
+    "institutional",
+    "sector",
+    "theme",
+    "ftd"
+  ],
+  "rationale": "Broad participation indicates healthy market internals. Missing critical inputs (top_risk, regime) reduce confidence. New entries not recommended; consider trimming on strength."
+}

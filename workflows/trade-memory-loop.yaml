@@ -1,0 +1,118 @@
+schema_version: 1
+id: trade-memory-loop
+display_name: Trade Memory Loop
+cadence: ad-hoc
+estimated_minutes: 30
+target_users:
+  - part-time-swing-trader
+  - long-term-investor
+  - growth-investor
+difficulty: beginner
+api_profile: no-api-basic
+
+when_to_run: >-
+  Every time a position is closed (full or partial exit). Records the outcome,
+  generates a postmortem, (optionally) coaches process / risk / execution /
+  behavior patterns, and (optionally) re-validates the original hypothesis via
+  backtest.
+when_not_to_run: >-
+  Do not run before a position is closed — use trader-memory-core directly to
+  update an open thesis instead. Do not skip this loop after a closed trade,
+  even on winners.
+
+required_skills:
+  - trader-memory-core
+  - signal-postmortem
+optional_skills:
+  - trade-performance-coach
+  - backtest-expert
+
+artifacts:
+  - id: closed_thesis_record
+    produced_by_step: 1
+    required: true
+  - id: postmortem_findings
+    produced_by_step: 2
+    required: true
+    downstream_hints:
+      - monthly-performance-review
+  - id: performance_coach_report
+    produced_by_step: 3
+    required: false
+    downstream_hints:
+      - monthly-performance-review
+  - id: next_session_operating_rules
+    produced_by_step: 3
+    required: false
+    downstream_hints:
+      - monthly-performance-review
+  - id: backtest_validation
+    produced_by_step: 4
+    required: false
+  - id: lessons_log_entry
+    produced_by_step: 5
+    required: true
+    downstream_hints:
+      - monthly-performance-review
+
+steps:
+  - step: 1
+    name: Record closed trade outcome
+    skill: trader-memory-core
+    produces:
+      - closed_thesis_record
+    decision_gate: false
+
+  - step: 2
+    name: Generate postmortem
+    skill: signal-postmortem
+    consumes:
+      - closed_thesis_record
+    produces:
+      - postmortem_findings
+    decision_gate: true
+    decision_question: >-
+      What was the root cause of the outcome — thesis quality, execution,
+      market environment, or randomness? Classify and document.
+
+  - step: 3
+    name: Coach process, risk, and behavior patterns
+    skill: trade-performance-coach
+    optional: true
+    consumes:
+      - closed_thesis_record
+      - postmortem_findings
+    produces:
+      - performance_coach_report
+      - next_session_operating_rules
+    decision_gate: true
+    decision_question: >-
+      Which next-session operating rules should the trader accept, modify,
+      defer, or journal only?
+
+  - step: 4
+    name: Re-validate hypothesis via backtest
+    skill: backtest-expert
+    optional: true
+    consumes:
+      - postmortem_findings
+    produces:
+      - backtest_validation
+    decision_gate: false
+
+  - step: 5
+    name: Append lessons to journal
+    skill: trader-memory-core
+    consumes:
+      - postmortem_findings
+      - backtest_validation
+    produces:
+      - lessons_log_entry
+    decision_gate: false
+
+manual_review:
+  - Be honest about whether the win was thesis-driven or lucky.
+  - Be honest about whether the loss was thesis-flawed or executed poorly.
+  - Don't rationalize randomness as either skill or failure.
+
+journal_destination: trader-memory-core

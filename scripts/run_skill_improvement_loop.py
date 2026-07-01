@@ -1,0 +1,1179 @@
+#!/usr/bin/env python3
+"""Skill self-improvement loop orchestrator.
+
+Picks the next skill, scores it with run_dual_axis_review.py,
+optionally invokes `claude -p` for LLM review and improvement,
+and opens a PR when the score is below threshold.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import logging
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+logger = logging.getLogger("skill_improvement")
+
+REVIEWER_SCRIPT = "skills/dual-axis-skill-reviewer/scripts/run_dual_axis_review.py"
+SELF_SKILL_NAME = "dual-axis-skill-reviewer"
+STATE_FILE = "logs/.skill_improvement_state.json"
+LOCK_FILE = "logs/.skill_improvement.lock"
+LOG_DIR = "logs"
+SUMMARY_DIR = "reports/skill-improvement-log"
+SCORE_THRESHOLD = 90
+HISTORY_LIMIT = 60
+LOG_RETENTION_DAYS = 30
+CLAUDE_TIMEOUT = 300
+CLAUDE_RETRIES = 2
+CLAUDE_BUDGET_REVIEW = 0.50
+CLAUDE_BUDGET_IMPROVE = 2.00
+IMPROVEMENT_TIMEOUT = 600
+
+
+# ── Lock ──
+
+
+def acquire_lock(project_root: Path) -> bool:
+    """Acquire a PID-based lock file. Returns True if acquired."""
+    lock_path = project_root / LOCK_FILE
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if lock_path.exists():
+        try:
+            old_pid = int(lock_path.read_text().strip())
+            os.kill(old_pid, 0)
+            logger.info("Another instance (PID %d) is running. Exiting.", old_pid)
+            return False
+        except (ValueError, OSError):
+            logger.info("Stale lock found, removing.")
+            lock_path.unlink(missing_ok=True)
+
+    lock_path.write_text(str(os.getpid()))
+    return True
+
+
+def release_lock(project_root: Path) -> None:
+    lock_path = project_root / LOCK_FILE
+    lock_path.unlink(missing_ok=True)
+
+
+# ── Git safety ──
+
+
+_SAFE_DIRTY_PREFIXES = ("reports/", "logs/", "state/")
+
+
+def _is_safe_dirty_tree(porcelain_output: str) -> bool:
+    """Return True when all dirty files are in safe (non-source) directories.
+
+    Untracked files (??) are always blocked regardless of path.
+    Tracked changes (M/A/D/R etc.) are allowed only under reports/ or logs/.
+    """
+    for line in porcelain_output.splitlines():
+        if not line.strip():
+            continue
+        status_code = line[:2]
+        filepath = line[3:].strip().split(" -> ")[-1]  # handle renames
+        if status_code == "??":
+            # Allow untracked files under state/ (new thesis/journal files)
+            if not filepath.startswith("state/"):
+                logger.warning("Blocked: untracked file: %s", filepath)
+                return False
+        elif not filepath.startswith(_SAFE_DIRTY_PREFIXES):
+            logger.warning("Blocked: non-safe dirty file: %s", filepath)
+            return False
+    return True
+
+
+def git_safe_check(project_root: Path) -> bool:
+    """Verify working tree on main branch and pull latest.
+
+    Allows tracked changes in reports/ and logs/ to avoid blocking the
+    pipeline when only output files are dirty.
+    """
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if status.stdout.strip():
+            if not _is_safe_dirty_tree(status.stdout):
+                logger.error("Working tree has non-safe dirty files. Aborting.")
+                return False
+            logger.info(
+                "Dirty tree contains only safe files, proceeding: %s",
+                [line[3:].strip() for line in status.stdout.strip().splitlines()],
+            )
+
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if branch.stdout.strip() != "main":
+            logger.error("Not on main branch (on '%s'). Aborting.", branch.stdout.strip())
+            return False
+
+        pull = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if pull.returncode != 0:
+            logger.warning(
+                "git pull --ff-only failed; will retry next run. stderr: %s", pull.stderr.strip()
+            )
+            return False
+
+    except FileNotFoundError:
+        logger.error("git not found.")
+        return False
+
+    return True
+
+
+# ── State management ──
+
+
+def load_state(project_root: Path) -> dict:
+    state_path = project_root / STATE_FILE
+    if state_path.exists():
+        try:
+            return json.loads(state_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Corrupt state file, starting fresh.")
+    return {"last_skill_index": -1, "history": []}
+
+
+def save_state(project_root: Path, state: dict) -> None:
+    state_path = project_root / STATE_FILE
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state["history"] = state["history"][-HISTORY_LIMIT:]
+    state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+# ── Skill selection ──
+
+
+def discover_skills(project_root: Path) -> list[str]:
+    """Return sorted skill names, excluding the reviewer itself."""
+    skills_dir = project_root / "skills"
+    if not skills_dir.is_dir():
+        return []
+    names = []
+    for child in sorted(skills_dir.iterdir()):
+        if child.is_dir() and (child / "SKILL.md").exists() and child.name != SELF_SKILL_NAME:
+            names.append(child.name)
+    return names
+
+
+def pick_next_skill(skills: list[str], state: dict) -> str | None:
+    if not skills:
+        return None
+    idx = (state.get("last_skill_index", -1) + 1) % len(skills)
+    state["last_skill_index"] = idx
+    return skills[idx]
+
+
+# ── Scoring ──
+
+
+def _build_reviewer_cmd(project_root: Path) -> list[str]:
+    """Return command prefix for invoking the reviewer script."""
+    if shutil.which("uv"):
+        return ["uv", "run", "--extra", "dev", "python", str(project_root / REVIEWER_SCRIPT)]
+    return [sys.executable, str(project_root / REVIEWER_SCRIPT)]
+
+
+def run_auto_score(
+    project_root: Path,
+    skill_name: str,
+    emit_prompt: bool = False,
+    skip_tests: bool = True,
+    llm_review_json: str | None = None,
+) -> dict | None:
+    """Run the auto reviewer and return its JSON report."""
+    script = str(project_root / REVIEWER_SCRIPT)
+    extra_args: list[str] = [
+        "--project-root",
+        str(project_root),
+        "--skill",
+        skill_name,
+        "--output-dir",
+        "reports",
+    ]
+    if skip_tests:
+        extra_args.append("--skip-tests")
+    if llm_review_json:
+        extra_args.extend(["--llm-review-json", llm_review_json])
+    if emit_prompt:
+        extra_args.append("--emit-llm-prompt")
+
+    cmd = [*_build_reviewer_cmd(project_root), *extra_args]
+
+    result = subprocess.run(
+        cmd, cwd=project_root, capture_output=True, text=True, check=False, timeout=120
+    )
+
+    # Fallback: if uv failed, retry with sys.executable
+    if result.returncode != 0 and cmd[0] == "uv":
+        logger.warning("uv run failed for %s; falling back to %s.", skill_name, sys.executable)
+        cmd = [sys.executable, script, *extra_args]
+        result = subprocess.run(
+            cmd, cwd=project_root, capture_output=True, text=True, check=False, timeout=120
+        )
+
+    if result.returncode != 0:
+        logger.error("Auto score failed for %s: %s", skill_name, result.stderr.strip())
+        return None
+
+    report_files = sorted(
+        (project_root / "reports").glob(f"skill_review_{skill_name}_*.json"), reverse=True
+    )
+    if not report_files:
+        logger.error("No report JSON found for %s.", skill_name)
+        return None
+
+    return json.loads(report_files[0].read_text(encoding="utf-8"))
+
+
+def run_llm_review(project_root: Path, skill_name: str, prompt_file: str) -> dict | None:
+    """Invoke claude CLI for LLM review. Returns parsed JSON or None."""
+    if not shutil.which("claude"):
+        logger.warning("claude CLI not found; skipping LLM review.")
+        return None
+
+    prompt_path = Path(prompt_file)
+    if not prompt_path.is_absolute():
+        prompt_path = project_root / prompt_path
+    if not prompt_path.exists():
+        logger.error("LLM prompt file not found: %s", prompt_file)
+        return None
+
+    prompt_text = prompt_path.read_text(encoding="utf-8")
+
+    # JSON Schema to force structured output from Claude CLI
+    review_schema = json.dumps(
+        {
+            "type": "object",
+            "properties": {
+                "score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "summary": {"type": "string"},
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                            "path": {"type": "string"},
+                            "line": {"type": "integer"},
+                            "message": {"type": "string"},
+                            "improvement": {"type": "string"},
+                        },
+                        "required": ["severity", "message", "improvement"],
+                    },
+                },
+            },
+            "required": ["score", "summary", "findings"],
+        }
+    )
+
+    # Try with --json-schema first, then fall back to plain --output-format json
+    strategies = [
+        {
+            "label": "json-schema",
+            "extra_args": ["--json-schema", review_schema],
+        },
+        {
+            "label": "plain-json",
+            "extra_args": [],
+        },
+    ]
+
+    for strategy in strategies:
+        for attempt in range(CLAUDE_RETRIES + 1):
+            try:
+                cmd = [
+                    "claude",
+                    "-p",
+                    "--output-format",
+                    "json",
+                    *strategy["extra_args"],
+                    "--max-turns",
+                    "1",
+                    f"--max-budget-usd={CLAUDE_BUDGET_REVIEW}",
+                ]
+                # For plain-json mode, append schema instructions to the prompt
+                effective_prompt = prompt_text
+                if strategy["label"] == "plain-json":
+                    effective_prompt += (
+                        "\n\nIMPORTANT: Respond with a single JSON object containing these keys: "
+                        '"score" (integer 0-100), "summary" (string), '
+                        '"findings" (array of objects with "severity", "message", "improvement"). '
+                        "Do not wrap in markdown code fences."
+                    )
+                result = subprocess.run(
+                    cmd,
+                    input=effective_prompt,
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=CLAUDE_TIMEOUT,
+                )
+                if result.returncode != 0:
+                    logger.warning(
+                        "claude -p [%s] attempt %d failed: %s",
+                        strategy["label"],
+                        attempt + 1,
+                        result.stderr.strip()[:200],
+                    )
+                    continue
+
+                # Parse claude output to extract the review JSON
+                response = _extract_json_from_claude(result.stdout, ["score"])
+                if response:
+                    return response
+                logger.warning(
+                    "Could not parse LLM JSON [%s] on attempt %d.",
+                    strategy["label"],
+                    attempt + 1,
+                )
+
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "claude -p [%s] timed out on attempt %d.", strategy["label"], attempt + 1
+                )
+            except FileNotFoundError:
+                logger.warning("claude CLI disappeared; skipping LLM review.")
+                return None
+
+        logger.info("Strategy '%s' exhausted; trying next.", strategy["label"])
+
+    return None
+
+
+def _extract_json_from_claude(output: str, required_keys: list[str]) -> dict | None:
+    """Extract JSON from claude CLI --output-format json envelope.
+
+    Unwraps the envelope (result or content[].text), then scans for
+    the first JSON object containing any of the required_keys.
+    """
+    # claude --output-format json wraps response; try to extract inner JSON
+    try:
+        wrapper = json.loads(output)
+        text = ""
+        if isinstance(wrapper, dict):
+            text = wrapper.get("result", "") or ""
+            if not text:
+                content = wrapper.get("content", [])
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text += block.get("text", "")
+        if not text:
+            text = output
+    except json.JSONDecodeError:
+        text = output
+
+    # Find JSON block using raw_decode (handles nested objects and braces in strings)
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(text):
+        pos = text.find("{", idx)
+        if pos == -1:
+            break
+        try:
+            obj, end_idx = decoder.raw_decode(text, pos)
+            if isinstance(obj, dict) and any(k in obj for k in required_keys):
+                return obj
+            idx = pos + 1
+        except json.JSONDecodeError:
+            idx = pos + 1
+    return None
+
+
+def _is_nothing_to_commit_output(output: str) -> bool:
+    """Return True when git commit output indicates no staged changes."""
+    text = output.lower()
+    return (
+        "nothing to commit" in text
+        or "no changes added to commit" in text
+        or "nothing added to commit" in text
+    )
+
+
+# ── Improvement ──
+
+
+def check_existing_pr(project_root: Path, branch_name: str) -> bool:
+    """Check if an open PR already exists for this branch."""
+    if not shutil.which("gh"):
+        return False
+    result = subprocess.run(
+        ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        prs = json.loads(result.stdout)
+        return len(prs) > 0
+    except json.JSONDecodeError:
+        return False
+
+
+# ── Code-faithfulness gate ──
+#
+# The reviewer rewards the *presence* of a `## Prerequisites` section but never
+# validates its *content*. Without a guard, the LLM improver can satisfy the
+# finding by copying boilerplate from another skill: PR #164 added
+# "Python 3.8+ with pandas and requests" to a skill that imports neither pandas
+# nor runs on 3.8. These helpers re-check dependency/version claims against the
+# skill's real imports and the repo `requires-python` floor, so an unfaithful
+# improvement is rolled back instead of shipped.
+
+# Display name (as written in prose) -> import name to look for in scripts.
+# Curated to common analysis libs so the check stays precise (no false positives
+# on plain words like "Python", "GitHub", or "CSV").
+_KNOWN_THIRD_PARTY_LIBS = {
+    "pandas": "pandas",
+    "numpy": "numpy",
+    "scipy": "scipy",
+    "requests": "requests",
+    "pyyaml": "yaml",
+    "yaml": "yaml",
+    "matplotlib": "matplotlib",
+    "seaborn": "seaborn",
+    "scikit-learn": "sklearn",
+    "sklearn": "sklearn",
+    "statsmodels": "statsmodels",
+    "beautifulsoup4": "bs4",
+    "bs4": "bs4",
+    "lxml": "lxml",
+    "openpyxl": "openpyxl",
+    "tabulate": "tabulate",
+    "yfinance": "yfinance",
+    "aiohttp": "aiohttp",
+    "httpx": "httpx",
+}
+
+_NEGATION_RE = re.compile(r"\b(no|not|without|don't|doesn't|isn't|aren't|never|none)\b")
+
+
+def _extract_prerequisites_section(skill_md_text: str) -> str | None:
+    """Return the body of the Prerequisites / Input Requirements section, or None."""
+    lines = skill_md_text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if re.match(r"^##\s+(Prerequisites|Input Requirements)\b", line):
+            start = i + 1
+            break
+    if start is None:
+        return None
+    body: list[str] = []
+    for line in lines[start:]:
+        if re.match(r"^##\s+", line):  # next H2 ends the section
+            break
+        body.append(line)
+    return "\n".join(body)
+
+
+def _skill_import_names(project_root: Path, skill_name: str) -> set[str]:
+    """Return the top-level module names imported anywhere in the skill's code."""
+    imports: set[str] = set()
+    skill_dir = project_root / "skills" / skill_name
+    if not skill_dir.exists():
+        return imports
+    import_re = re.compile(r"^\s*(?:from|import)\s+([a-zA-Z0-9_]+)")
+    for py in skill_dir.rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        try:
+            text = py.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            m = import_re.match(line)
+            if m:
+                imports.add(m.group(1))
+    return imports
+
+
+def _skill_string_literals(project_root: Path, skill_name: str) -> set[str]:
+    """Return string-constant values used anywhere in the skill's code.
+
+    Captures libraries referenced by name instead of imported — e.g. an lxml
+    parser passed as ``BeautifulSoup(html, "lxml")`` or a name handed to
+    ``importlib.import_module`` — so they are not mistaken for unused deps.
+    """
+    literals: set[str] = set()
+    skill_dir = project_root / "skills" / skill_name
+    if not skill_dir.exists():
+        return literals
+    for py in skill_dir.rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                literals.add(node.value.strip().lower())
+    return literals
+
+
+def _repo_python_floor(project_root: Path) -> tuple[int, int] | None:
+    """Parse the `requires-python = ">=3.9"` floor from pyproject.toml -> (3, 9)."""
+    pyproject = project_root / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r'requires-python\s*=\s*"[^"]*?(\d+)\.(\d+)', text)
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)))
+
+
+def check_prerequisites_faithfulness(project_root: Path, skill_name: str) -> list[str]:
+    """Verify a skill's Prerequisites section against its real code.
+
+    Returns a list of human-readable violation strings (empty == faithful).
+    Guards against the two error classes seen in PR #164:
+      1. A known third-party library is listed (in backticks) but no skill file
+         imports or references it by name.
+      2. A `Python 3.x+` floor is stated below the repo's requires-python.
+    """
+    skill_md = project_root / "skills" / skill_name / "SKILL.md"
+    if not skill_md.exists():
+        return []
+    try:
+        section = _extract_prerequisites_section(skill_md.read_text(encoding="utf-8"))
+    except OSError:
+        return []
+    if not section:
+        return []
+
+    violations: set[str] = set()
+    # A library counts as used if it is imported OR referenced by name as a
+    # string literal (covers parser backends like the lxml engine that
+    # BeautifulSoup loads from the string "lxml").
+    satisfied = _skill_import_names(project_root, skill_name) | _skill_string_literals(
+        project_root, skill_name
+    )
+
+    # 1) Library faithfulness. Only inspect backtick-quoted tokens, which is how
+    #    these SKILL.md files declare dependencies, and skip negated lines such
+    #    as "No `pandas` required".
+    for raw_line in section.splitlines():
+        if not raw_line.strip() or _NEGATION_RE.search(raw_line.lower()):
+            continue
+        for raw_token in re.findall(r"`([^`]+)`", raw_line):
+            m = re.match(r"[a-z0-9_.\-]+", raw_token.strip().lower())
+            if not m:
+                continue
+            display = m.group(0)
+            import_name = _KNOWN_THIRD_PARTY_LIBS.get(display)
+            if import_name and import_name not in satisfied and display not in satisfied:
+                violations.add(
+                    f"Prerequisites list `{raw_token.strip()}` but no skill file "
+                    f"imports or references `{import_name}`."
+                )
+
+    # 2) Python version floor must be >= the repo's requires-python.
+    repo_floor = _repo_python_floor(project_root)
+    version_match = re.search(r"Python\s+(\d+)\.(\d+)\s*\+", section)
+    if version_match and repo_floor:
+        stated = (int(version_match.group(1)), int(version_match.group(2)))
+        if stated < repo_floor:
+            violations.add(
+                f"Prerequisites claim Python {stated[0]}.{stated[1]}+ but repo "
+                f"requires-python is >={repo_floor[0]}.{repo_floor[1]}."
+            )
+
+    return sorted(violations)
+
+
+def apply_improvement(
+    project_root: Path,
+    skill_name: str,
+    report: dict,
+    dry_run: bool = False,
+) -> dict | None:
+    """Create a branch, use claude to improve the skill, and open a PR.
+
+    Returns the post-improvement report dict on success, or None on failure/dry-run.
+    """
+    if dry_run:
+        logger.info(
+            "[dry-run] Would improve skill '%s' (score=%d).",
+            skill_name,
+            report["final_review"]["score"],
+        )
+        return None
+
+    if not shutil.which("claude"):
+        logger.warning("claude CLI not found; skipping improvement.")
+        return None
+    if not shutil.which("gh"):
+        logger.warning("gh CLI not found; skipping PR creation.")
+        return None
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    branch_name = f"skill-improvement/{today}-{skill_name}"
+
+    if check_existing_pr(project_root, branch_name):
+        logger.info("Open PR already exists for %s; skipping.", branch_name)
+        return None
+
+    # Get pre-improvement auto score (use auto_review to avoid LLM merge bias)
+    pre_score = report["auto_review"]["score"]
+
+    # Delete existing branch if present (from a previous failed run)
+    subprocess.run(
+        ["git", "branch", "-D", branch_name],
+        cwd=project_root,
+        capture_output=True,
+        check=False,
+    )
+
+    # Create branch
+    subprocess.run(
+        ["git", "checkout", "-b", branch_name],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    try:
+        # Build improvement prompt
+        improvements = report["final_review"].get("improvement_items", [])
+        if not improvements:
+            logger.warning(
+                "No improvement_items for '%s' (score=%d); skipping to avoid unguided changes.",
+                skill_name,
+                pre_score,
+            )
+            _rollback(project_root, skill_name, branch_name)
+            return None
+
+        # Snapshot pre-existing faithfulness issues so the gate below only blocks
+        # NEW unfaithful claims introduced by this improvement, not pre-existing
+        # debt in an unrelated part of the skill.
+        pre_faithfulness = check_prerequisites_faithfulness(project_root, skill_name)
+
+        prompt = (
+            f"Improve the skill '{skill_name}' in skills/{skill_name}/ based on these findings:\n\n"
+            + "\n".join(f"- {item}" for item in improvements[:10])
+            + "\n\nMake minimal, targeted edits to address the findings. Do not change unrelated code."
+            + "\n\nKeep every claim faithful to the actual code:\n"
+            "- Before writing a Prerequisites/dependency/environment section, grep this skill's "
+            "scripts for real `import` statements. List only libraries that are actually imported; "
+            "never copy a dependency list from another skill (e.g. do not list `pandas` unless a "
+            "script imports it).\n"
+            "- For the Python version, use the repository's `requires-python` floor in pyproject.toml; "
+            "do not guess a lower version.\n"
+            "- Standard-library modules (csv, json, io, ...) are not third-party dependencies; do not "
+            "list them as installable requirements."
+        )
+
+        result = subprocess.run(
+            [
+                "claude",
+                "-p",
+                "--allowedTools",
+                "Read,Edit,Write,Glob,Grep",
+                f"--max-budget-usd={CLAUDE_BUDGET_IMPROVE}",
+            ],
+            input=prompt,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=IMPROVEMENT_TIMEOUT,
+        )
+        if result.returncode != 0:
+            logger.error("claude improvement failed: %s", result.stderr.strip()[:200])
+            _rollback(project_root, skill_name, branch_name)
+            return None
+
+        # Quality gate: re-score (with tests enabled)
+        re_report = run_auto_score(project_root, skill_name, skip_tests=False)
+        if not re_report:
+            logger.error("Re-scoring failed after improvement; rolling back.")
+            _rollback(project_root, skill_name, branch_name)
+            return None
+
+        re_score = re_report.get("auto_review", {}).get("score", 0)
+        if re_score <= pre_score:
+            logger.warning(
+                "Re-score (%d) not better than pre-score (%d); rolling back.",
+                re_score,
+                pre_score,
+            )
+            _rollback(project_root, skill_name, branch_name)
+            return None
+
+        # Code-faithfulness gate: a higher structural score is not enough. Block
+        # any dependency/version claim this improvement INTRODUCED that doesn't
+        # match the skill's real imports or the repo Python floor — the exact
+        # failure in PR #164 ("Python 3.8+ with pandas" on a skill that imports
+        # neither). Pre-existing issues are excluded so the gate doesn't punish
+        # an unrelated improvement for latent debt.
+        new_violations = [
+            v
+            for v in check_prerequisites_faithfulness(project_root, skill_name)
+            if v not in pre_faithfulness
+        ]
+        if new_violations:
+            logger.warning(
+                "Code-faithfulness gate failed for '%s' (improvement introduced "
+                "unfaithful Prerequisites claims); rolling back:\n  - %s",
+                skill_name,
+                "\n  - ".join(new_violations),
+            )
+            _rollback(project_root, skill_name, branch_name)
+            return None
+
+        # Auto-fix lint issues before committing
+        if shutil.which("ruff"):
+            subprocess.run(
+                ["ruff", "check", "--fix", f"skills/{skill_name}/"],
+                cwd=project_root,
+                capture_output=True,
+                check=False,
+            )
+            subprocess.run(
+                ["ruff", "format", f"skills/{skill_name}/"],
+                cwd=project_root,
+                capture_output=True,
+                check=False,
+            )
+
+        # Stage files for commit
+        subprocess.run(
+            ["git", "add", f"skills/{skill_name}/"],
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+        )
+
+        # Run pre-commit hooks to auto-fix whitespace/EOF issues
+        if shutil.which("pre-commit"):
+            staged = _get_staged_files(project_root, skill_name)
+            if staged:
+                pc_result = subprocess.run(
+                    ["pre-commit", "run", "--files"] + staged,
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if pc_result.returncode != 0:
+                    logger.info("pre-commit auto-fixed files; re-staging.")
+                    subprocess.run(
+                        ["git", "add", f"skills/{skill_name}/"],
+                        cwd=project_root,
+                        check=True,
+                        capture_output=True,
+                    )
+                    # 2nd pass: verify auto-fixes resolved all issues
+                    staged2 = _get_staged_files(project_root, skill_name)
+                    if staged2:
+                        pc2 = subprocess.run(
+                            ["pre-commit", "run", "--files"] + staged2,
+                            cwd=project_root,
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        if pc2.returncode != 0:
+                            logger.error(
+                                "pre-commit still failing after auto-fix; rolling back.\n"
+                                "stdout: %s\nstderr: %s",
+                                pc2.stdout.strip()[:500],
+                                pc2.stderr.strip()[:500] if pc2.stderr else "(empty)",
+                            )
+                            _rollback(project_root, skill_name, branch_name)
+                            return None
+
+        commit_msg = f"Improve {skill_name} skill (score {pre_score} -> {re_score})"
+        commit = subprocess.run(
+            ["git", "commit", "-m", commit_msg],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if commit.returncode != 0:
+            commit_output = ((commit.stderr or "") + "\n" + (commit.stdout or "")).strip()
+            if _is_nothing_to_commit_output(commit_output):
+                logger.info(
+                    "No staged changes to commit for %s; rolling back no-op improvement branch.",
+                    skill_name,
+                )
+                _rollback(project_root, skill_name, branch_name)
+                return None
+            logger.error(
+                "git commit failed: %s", commit_output[:500] if commit_output else "(empty)"
+            )
+            _rollback(project_root, skill_name, branch_name)
+            return None
+
+        push = subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if push.returncode != 0:
+            logger.error("git push failed: %s", push.stderr.strip()[:200])
+            return None
+
+        pr_body = (
+            f"## Summary\n"
+            f"- Skill: `{skill_name}`\n"
+            f"- Score: {pre_score} -> {re_score}\n\n"
+            f"## Improvements\n"
+            + "\n".join(f"- {item}" for item in improvements[:10])
+            + "\n\nGenerated by skill self-improvement loop."
+        )
+        pr = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--head",
+                branch_name,
+                "--title",
+                f"Improve {skill_name} skill (score {pre_score} -> {re_score})",
+                "--body",
+                pr_body,
+            ],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if pr.returncode != 0:
+            logger.error("gh pr create failed: %s", pr.stderr.strip()[:200])
+
+        return re_report
+
+    except subprocess.CalledProcessError as e:
+        stderr_text = e.stderr
+        if isinstance(stderr_text, bytes):
+            stderr_text = stderr_text.decode("utf-8", errors="replace")
+        logger.error(
+            "Subprocess failed during improvement: %s\nstderr: %s",
+            e,
+            stderr_text.strip()[:500] if stderr_text else "(empty)",
+        )
+        _rollback(project_root, skill_name, branch_name)
+        return None
+    except Exception:
+        logger.exception("Unexpected error during improvement.")
+        _rollback(project_root, skill_name, branch_name)
+        return None
+
+    finally:
+        # Return to main
+        subprocess.run(
+            ["git", "checkout", "main"],
+            cwd=project_root,
+            capture_output=True,
+            check=False,
+        )
+
+
+def _rollback(project_root: Path, skill_name: str, branch_name: str) -> None:
+    """Roll back changes and return to main."""
+    subprocess.run(
+        ["git", "reset", "HEAD", "--", f"skills/{skill_name}/"],
+        cwd=project_root,
+        capture_output=True,
+        check=False,
+    )
+    subprocess.run(
+        ["git", "checkout", "--", f"skills/{skill_name}/"],
+        cwd=project_root,
+        capture_output=True,
+        check=False,
+    )
+    subprocess.run(
+        ["git", "clean", "-fd", f"skills/{skill_name}/"],
+        cwd=project_root,
+        capture_output=True,
+        check=False,
+    )
+    subprocess.run(
+        ["git", "checkout", "main"],
+        cwd=project_root,
+        capture_output=True,
+        check=False,
+    )
+    subprocess.run(
+        ["git", "branch", "-D", branch_name],
+        cwd=project_root,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _get_staged_files(project_root: Path, skill_name: str) -> list[str]:
+    """Return list of staged files under the skill directory."""
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "--", f"skills/{skill_name}/"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    return [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
+
+
+# ── Summary ──
+
+
+def write_daily_summary(project_root: Path, skill_name: str, report: dict, improved: bool) -> None:
+    summary_dir = project_root / SUMMARY_DIR
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+    summary_path = summary_dir / f"{today}_summary.md"
+
+    entry = (
+        f"\n## {skill_name}\n"
+        f"- Score: {report['final_review']['score']}/100\n"
+        f"- Improved: {'Yes' if improved else 'No'}\n"
+        f"- High findings: {sum(1 for f in report['final_review'].get('findings', []) if f.get('severity') == 'high')}\n"
+    )
+
+    if summary_path.exists():
+        existing = summary_path.read_text(encoding="utf-8")
+        summary_path.write_text(existing + entry, encoding="utf-8")
+    else:
+        header = f"# Skill Improvement Summary - {today}\n"
+        summary_path.write_text(header + entry, encoding="utf-8")
+
+
+# ── Cleanup ──
+
+
+def cleanup_merged_branches(project_root: Path) -> None:
+    """Delete local branches whose PRs are merged or closed."""
+    if not shutil.which("gh"):
+        return
+
+    result = subprocess.run(
+        ["git", "branch", "--list", "skill-improvement/*"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return
+
+    for line in result.stdout.strip().splitlines():
+        branch = line.strip().lstrip("* ")
+        if not branch:
+            continue
+        pr_state = subprocess.run(
+            ["gh", "pr", "view", branch, "--json", "state"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if pr_state.returncode != 0:
+            continue
+        try:
+            data = json.loads(pr_state.stdout)
+            state = data.get("state", "").upper()
+            if state in ("MERGED", "CLOSED"):
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    cwd=project_root,
+                    capture_output=True,
+                    check=False,
+                )
+                logger.info("Deleted merged/closed branch: %s", branch)
+        except json.JSONDecodeError:
+            pass
+
+
+def rotate_logs(project_root: Path) -> None:
+    """Remove log files older than LOG_RETENTION_DAYS."""
+    log_dir = project_root / LOG_DIR
+    if not log_dir.is_dir():
+        return
+    cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
+    for f in log_dir.iterdir():
+        if f.is_file() and f.suffix == ".log":
+            try:
+                mtime = datetime.fromtimestamp(f.stat().st_mtime)
+                if mtime < cutoff:
+                    f.unlink()
+                    logger.info("Rotated old log: %s", f.name)
+            except OSError:
+                pass
+
+
+# ── Main ──
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Skill self-improvement orchestration loop")
+    parser.add_argument("--project-root", default=".", help="Project root directory")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Score only; skip improvement and PR creation"
+    )
+    return parser.parse_args()
+
+
+def run(project_root: Path, dry_run: bool = False) -> int:
+    """Core orchestration logic, separated from CLI for testability."""
+    log_dir = project_root / LOG_DIR
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(log_dir / "skill_improvement.log"),
+        ],
+    )
+
+    if not acquire_lock(project_root):
+        return 0
+
+    try:
+        # Git safety
+        if not dry_run and not git_safe_check(project_root):
+            return 1
+
+        # Discover and pick skill
+        skills = discover_skills(project_root)
+        if not skills:
+            logger.error("No skills found.")
+            return 1
+
+        state = load_state(project_root)
+        skill_name = pick_next_skill(skills, state)
+        if not skill_name:
+            logger.error("No skill to review.")
+            return 1
+
+        logger.info("Selected skill: %s", skill_name)
+
+        # Auto scoring (with LLM prompt emission)
+        report = run_auto_score(project_root, skill_name, emit_prompt=True)
+        if not report:
+            logger.error("Auto scoring failed.")
+            return 1
+
+        auto_score = report.get("auto_review", {}).get("score", 0)
+        logger.info("Auto score for %s: %d/100", skill_name, auto_score)
+
+        # LLM review (optional)
+        llm_prompt_file = report.get("llm_prompt_file")
+        if llm_prompt_file and not dry_run:
+            llm_result = run_llm_review(project_root, skill_name, llm_prompt_file)
+            if llm_result:
+                # Write LLM review JSON and re-run with --llm-review-json
+                llm_json_path = project_root / "reports" / f"llm_review_{skill_name}.json"
+                llm_json_path.write_text(json.dumps(llm_result, indent=2), encoding="utf-8")
+                logger.info("LLM review score: %d", llm_result.get("score", 0))
+                # Re-score with LLM review merged
+                merged_report = run_auto_score(
+                    project_root,
+                    skill_name,
+                    llm_review_json=str(llm_json_path),
+                )
+                if merged_report:
+                    report = merged_report
+
+        final_score = report.get("auto_review", {}).get("score", auto_score)
+        logger.info("Auto-based score for %s: %d/100", skill_name, final_score)
+
+        # Improvement
+        improved = False
+        if final_score < SCORE_THRESHOLD:
+            logger.info(
+                "Auto score %d below %d; attempting improvement.", final_score, SCORE_THRESHOLD
+            )
+            improvement_result = apply_improvement(
+                project_root, skill_name, report, dry_run=dry_run
+            )
+            if isinstance(improvement_result, dict):
+                # Use post-improvement report for summary and state
+                report = improvement_result
+                final_score = report.get("auto_review", {}).get("score", final_score)
+                improved = True
+        else:
+            logger.info(
+                "Auto score meets threshold (%d >= %d); no improvement needed.",
+                final_score,
+                SCORE_THRESHOLD,
+            )
+
+        # Summary
+        write_daily_summary(project_root, skill_name, report, improved)
+
+        # State update
+        state["history"].append(
+            {
+                "skill": skill_name,
+                "score": final_score,
+                "improved": improved,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+        save_state(project_root, state)
+
+        # Cleanup
+        if not dry_run:
+            cleanup_merged_branches(project_root)
+            rotate_logs(project_root)
+
+        return 0
+
+    finally:
+        release_lock(project_root)
+
+
+def main() -> int:
+    args = parse_args()
+    project_root = Path(args.project_root).resolve()
+    return run(project_root, dry_run=args.dry_run)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

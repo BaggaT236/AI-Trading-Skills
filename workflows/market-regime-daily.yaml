@@ -1,0 +1,88 @@
+schema_version: 1
+id: market-regime-daily
+display_name: Market Regime Daily
+cadence: daily
+estimated_minutes: 15
+target_users:
+  - part-time-swing-trader
+  - growth-investor
+difficulty: beginner
+api_profile: no-api-basic
+
+when_to_run: >-
+  Before considering new swing-trade risk for the day. Run before market open
+  or in the first 30 minutes after.
+when_not_to_run: >-
+  Do not use this output as a standalone buy/sell signal. The exposure_decision
+  is a posture (allow / restrict / cash-priority), not a directive.
+
+required_skills:
+  - market-breadth-analyzer
+  - uptrend-analyzer
+  - exposure-coach
+optional_skills:
+  - market-top-detector
+  - macro-regime-detector
+
+artifacts:
+  - id: market_breadth_report
+    produced_by_step: 1
+    required: true
+    downstream_hints:
+      - swing-opportunity-daily
+      - monthly-performance-review
+  - id: uptrend_report
+    produced_by_step: 2
+    required: true
+  - id: top_risk_report
+    produced_by_step: 3
+    required: false
+  - id: exposure_decision
+    produced_by_step: 4
+    required: true
+    downstream_hints:
+      - swing-opportunity-daily
+
+steps:
+  - step: 1
+    name: Analyze market breadth
+    skill: market-breadth-analyzer
+    produces:
+      - market_breadth_report
+    decision_gate: false
+
+  - step: 2
+    name: Analyze uptrend participation
+    skill: uptrend-analyzer
+    produces:
+      - uptrend_report
+    decision_gate: false
+
+  - step: 3
+    name: Check market top risk
+    skill: market-top-detector
+    optional: true
+    produces:
+      - top_risk_report
+    decision_gate: false
+
+  - step: 4
+    name: Decide exposure posture
+    skill: exposure-coach
+    consumes:
+      - market_breadth_report
+      - uptrend_report
+      - top_risk_report
+    produces:
+      - exposure_decision
+    decision_gate: true
+    decision_question: >-
+      Given today's breadth, uptrend participation, and top risk, is new swing
+      trade risk allowed, restricted, or cash-priority?
+
+manual_review:
+  - Confirm output is not used as a buy/sell signal.
+  - Confirm whether exposure should be reduced, unchanged, or increased.
+  - If exposure_decision is restrictive, defer running swing-opportunity-daily.
+
+journal_destination: trader-memory-core

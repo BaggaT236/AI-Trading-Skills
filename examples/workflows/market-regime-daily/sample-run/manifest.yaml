@@ -1,0 +1,45 @@
+workflow_id: market-regime-daily
+sample_type: required-only
+illustrative: true                 # fictional market snapshot; not investment advice
+artifact_shape: raw-plus-handoff   # composite{} mirrors raw skill output;
+                                   # top-level *_score is the workflow hand-off field
+prompt: prompt.md
+
+optional_steps_skipped:
+  - step: 3
+    skill: market-top-detector
+    reason: required-only canonical sample
+
+artifacts:
+  - step: 1
+    artifact_id: market_breadth_report
+    skill: market-breadth-analyzer
+    files:
+      canonical: 01_market_breadth_report.json
+      companion: 01_market_breadth_report.md
+  - step: 2
+    artifact_id: uptrend_report
+    skill: uptrend-analyzer
+    files:
+      canonical: 02_uptrend_report.json
+      companion: 02_uptrend_report.md
+  - step: 4
+    artifact_id: exposure_decision
+    skill: exposure-coach
+    files:
+      canonical: 04_exposure_decision.json
+      companion: 04_exposure_decision.md
+
+# Fixture note: 04_exposure_decision.json is reproducible. Running the real
+# exposure-coach extractors over the hand-off files yields the same scores:
+#   extract_breadth_score(01) == component_scores.breadth_score == 66
+#   extract_uptrend_score(02) == component_scores.uptrend_score  == 72
+verification:
+  data_date: "2026-01-15"
+  expected:
+    breadth_score: 66
+    uptrend_score: 72
+    composite_score: 49.0
+    exposure_ceiling_pct: 48
+    recommendation: REDUCE_ONLY
+    confidence: LOW

@@ -1,0 +1,160 @@
+schema_version: 1
+id: stockbee-ep-daily
+display_name: Stockbee EP Daily
+cadence: daily
+estimated_minutes: 35
+target_users:
+  - part-time-swing-trader
+  - growth-investor
+difficulty: advanced
+api_profile: mixed
+
+when_to_run: >-
+  Run on earnings/news-heavy days after the market-regime workflow allows new
+  risk, or ad hoc when a game-changing catalyst appears. Use this workflow to
+  classify Day 1 Episodic Pivot candidates and decide whether they are
+  actionable today, delayed-EP watchlist names, or PEAD handoff candidates.
+when_not_to_run: >-
+  Do not run as a blind stock screener without catalyst inputs. Do not use it
+  to bypass market-regime gates, chart validation, position sizing, or manual
+  catalyst review.
+
+required_skills:
+  - stockbee-episodic-pivot-analyzer
+  - technical-analyst
+  - position-sizer
+  - trader-memory-core
+optional_skills:
+  - earnings-trade-analyzer
+  - stockbee-momentum-burst-screener
+  - pead-screener
+  - theme-detector
+  - breakout-trade-planner
+
+prerequisite_workflows:
+  - id: market-regime-daily
+    artifact: exposure_decision
+    rationale: >-
+      New EP trades should still respect the market-regime exposure gate.
+
+artifacts:
+  - id: earnings_candidates
+    produced_by_step: 1
+    required: false
+  - id: momentum_burst_candidates
+    produced_by_step: 2
+    required: false
+  - id: episodic_pivot_candidates
+    produced_by_step: 3
+    required: true
+  - id: pead_handoff_candidates
+    produced_by_step: 3
+    required: false
+    downstream_hints:
+      - swing-opportunity-daily
+  - id: delayed_ep_watchlist
+    produced_by_step: 3
+    required: false
+  - id: validated_ep_setups
+    produced_by_step: 4
+    required: true
+  - id: ep_position_sizing
+    produced_by_step: 5
+    required: true
+  - id: ep_trade_plan
+    produced_by_step: 6
+    required: false
+  - id: ep_journal_entry
+    produced_by_step: 7
+    required: true
+    downstream_hints:
+      - trade-memory-loop
+
+steps:
+  - step: 1
+    name: Optional earnings candidate scan
+    skill: earnings-trade-analyzer
+    optional: true
+    produces:
+      - earnings_candidates
+    decision_gate: false
+
+  - step: 2
+    name: Optional momentum confirmation scan
+    skill: stockbee-momentum-burst-screener
+    optional: true
+    produces:
+      - momentum_burst_candidates
+    decision_gate: false
+
+  - step: 3
+    name: Analyze Day 1 Episodic Pivot candidates
+    skill: stockbee-episodic-pivot-analyzer
+    consumes:
+      - earnings_candidates
+      - momentum_burst_candidates
+    produces:
+      - episodic_pivot_candidates
+      - pead_handoff_candidates
+      - delayed_ep_watchlist
+    decision_gate: true
+    decision_question: >-
+      Which candidates have a true game-changing catalyst plus price/volume
+      confirmation? Separate ACTIONABLE_DAY1 from DELAYED_EP_WATCH and reject
+      low-quality headline-only moves.
+
+  - step: 4
+    name: Validate EP chart quality
+    skill: technical-analyst
+    consumes:
+      - episodic_pivot_candidates
+    produces:
+      - validated_ep_setups
+    decision_gate: true
+    decision_question: >-
+      Does the chart confirm a clean EP reaction with acceptable close quality,
+      liquidity, and risk to the EP-day low?
+
+  - step: 5
+    name: Calculate EP position size
+    skill: position-sizer
+    consumes:
+      - validated_ep_setups
+    produces:
+      - ep_position_sizing
+    decision_gate: false
+
+  - step: 6
+    name: Build optional EP trade plan
+    skill: breakout-trade-planner
+    optional: true
+    consumes:
+      - validated_ep_setups
+      - ep_position_sizing
+    produces:
+      - ep_trade_plan
+    decision_gate: false
+
+  - step: 7
+    name: Register EP thesis or watchlist entry
+    skill: trader-memory-core
+    consumes:
+      - validated_ep_setups
+      - ep_position_sizing
+      - ep_trade_plan
+    produces:
+      - ep_journal_entry
+    decision_gate: true
+    decision_question: >-
+      Which candidates deserve an active thesis, which belong on delayed EP / PEAD
+      watch, and which should be ignored despite a high initial score?
+
+manual_review:
+  - Confirm market-regime-daily allows new risk before acting.
+  - Verify the catalyst manually; this workflow does not discover or validate news truth by itself.
+  - Treat analyst-only and story-only EPs as lower quality unless price/volume confirmation is exceptional.
+  - Use EP-day low as the default stop reference only if the distance is realistically sizeable.
+  - Send overextended earnings/guidance EPs to PEAD monitoring instead of chasing Day 1.
+  - All orders are placed manually at the broker; no auto-execution.
+
+journal_destination: trader-memory-core

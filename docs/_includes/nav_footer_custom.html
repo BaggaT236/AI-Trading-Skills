@@ -1,0 +1,14 @@
+{% if page.lang_peer %}
+<div class="lang-toggle" style="padding: 0.5rem 1rem; border-top: 1px solid var(--borderColor-default, #d0d7de); margin-top: 1rem;">
+  {% assign current_lang = page.url | slice: 1, 2 %}
+  {% if current_lang == "en" %}
+    <span style="font-weight: 600;">EN</span> |
+    <a href="{{ page.lang_peer | relative_url }}">JP</a>
+  {% elsif current_lang == "ja" %}
+    <a href="{{ page.lang_peer | relative_url }}">EN</a> |
+    <span style="font-weight: 600;">JP</span>
+  {% else %}
+    <a href="{{ page.lang_peer | relative_url }}">Switch Language</a>
+  {% endif %}
+</div>
+{% endif %}

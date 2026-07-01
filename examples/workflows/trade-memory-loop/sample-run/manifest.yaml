@@ -1,0 +1,42 @@
+workflow_id: trade-memory-loop
+sample_type: required-only
+illustrative: true                 # fictional ticker EXMPL; not investment advice
+artifact_shape: raw-plus-handoff   # consistent across examples/workflows/;
+                                   # this workflow's artifacts are native shapes
+prompt: prompt.md
+
+optional_steps_skipped:
+  - step: 3
+    skill: backtest-expert
+    reason: required-only canonical sample
+
+artifacts:
+  - step: 1
+    artifact_id: closed_thesis_record
+    skill: trader-memory-core
+    schema: skills/trader-memory-core/schemas/thesis.schema.json
+    files:
+      canonical: 01_closed_thesis_record.yaml
+  - step: 2
+    artifact_id: postmortem_findings
+    skill: signal-postmortem
+    files:
+      canonical: 02_postmortem_findings.json
+      companion: 02_postmortem_summary.md
+  - step: 4
+    artifact_id: lessons_log_entry
+    skill: trader-memory-core
+    files:
+      canonical: 04_lessons_log_entry.md
+
+# Fixture note: 01_closed_thesis_record.yaml validates against the schema via
+# the real trader-memory-core validator (jsonschema Draft7 + CLOSED business
+# invariants); 02_postmortem_findings.json is produced by the real
+# signal-postmortem recorder consuming that thesis.
+verification:
+  thesis_status: CLOSED
+  thesis_validates: true            # thesis_store._validate_thesis() passes
+  expected:
+    outcome_category: TRUE_POSITIVE
+    holding_days: 50
+    exit_reason: target_hit

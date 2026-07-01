@@ -1,0 +1,103 @@
+    def get_company_profile(self, symbol: str) -> Optional[dict]:
+        """Fetch company profile (market cap, IPO date, sector, etc.).
+
+        Uses ``/stable/profile?symbol={symbol}`` (single symbol). Returns
+        ``None`` on failure.
+        """
+        cache_key = f"profile_{symbol}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        # Hardcoded v3 URL bypasses the stable→v3 fallback list; rewrite here.
+        url, params = v3_to_stable(f"{self.BASE_URL}/profile/{symbol}")
+        data = self._rate_limited_get(url, params)
+        if isinstance(data, list) and data:
+            profile = data[0]
+            # /stable/profile returns ``marketCap``; v3 returned ``mktCap``.
+            # Re-alias so consumers (e.g. screen_parabolic.py market-cap bounds)
+            # keep working against the legacy key.
+            if "mktCap" not in profile and "marketCap" in profile:
+                profile["mktCap"] = profile["marketCap"]
+            self.cache[cache_key] = profile
+            return profile
+        return None
+
+    def get_profile_bulk(self, part: int = 0) -> Optional[list[dict]]:
+        """Bulk profile download (Premium endpoint).
+
+        Used to avoid per-symbol calls during the initial universe pass.
+        """
+        cache_key = f"profile_bulk_{part}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        url = "https://financialmodelingprep.com/stable/profile-bulk"
+        data = self._rate_limited_get(url, params={"part": part}, quiet=True)
+        if isinstance(data, list) and data:
+            self.cache[cache_key] = data
+            return data
+        return None
+
+    def get_earnings_calendar(self, from_date: str, to_date: str) -> Optional[list[dict]]:
+        """Fetch upcoming earnings between two dates (YYYY-MM-DD)."""
+        cache_key = f"earnings_{from_date}_{to_date}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        # Hardcoded v3 URL bypasses the stable→v3 fallback list; rewrite here.
+        url, params = v3_to_stable(
+            f"{self.BASE_URL}/earning_calendar", {"from": from_date, "to": to_date}
+        )
+        data = self._rate_limited_get(url, params=params)
+        if isinstance(data, list):
+            self.cache[cache_key] = data
+        return data
+
+    def get_aftermarket_quote(self, symbol: str) -> Optional[dict]:
+        """Pre/after-market quote.
+
+        FMP exposes this as ``stable/aftermarket-quote?symbol=AAPL``. The
+        response shape is ``price`` / ``bid`` / ``ask`` / ``volume`` /
+        ``timestamp`` — ``high`` / ``low`` are NOT guaranteed and the caller
+        must handle ``None`` for those fields explicitly. The returned dict
+        always carries a ``source`` key for the schema.
+
+        Returns ``None`` on failure (no aftermarket data published).
+        """
+        cache_key = f"aftermarket_{symbol}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        url = "https://financialmodelingprep.com/stable/aftermarket-quote"
+        data = self._rate_limited_get(url, params={"symbol": symbol}, quiet=True)
+        if not data:
+            return None
+        # FMP may return either a list or a dict depending on tier
+        row = data[0] if isinstance(data, list) and data else data
+        if not isinstance(row, dict):
+            return None
+        out = {
+            "price": row.get("price"),
+            "bid": row.get("bid"),
+            "ask": row.get("ask"),
+            "volume": row.get("volume") or row.get("size"),
+            "high": row.get("high"),  # may be None
+            "low": row.get("low"),  # may be None
+            "timestamp": row.get("timestamp") or row.get("date"),
+            "source": "fmp_aftermarket_quote",
+        }
+        self.cache[cache_key] = out
+        return out
+
+    def get_intraday_ohlcv(
+        self,
+        symbol: str,
+        interval: str = "5min",
+        from_ts: Optional[str] = None,
+        to_ts: Optional[str] = None,
+    ) -> Optional[list[dict]]:
+        """Intraday bars — Phase 3 (v0.5) feature.
+
+        Stub for the MVP. Phase 1 + Phase 2 do not need this; the
+        function is declared so the broader skill API surface is stable.
+        """
+        raise NotImplementedError(
+            "Intraday OHLCV is part of Phase 3 (v0.5). MVP only consumes "
+            "daily bars + aftermarket quote."
+        )

@@ -1,0 +1,149 @@
+schema_version: 1
+id: monthly-performance-review
+display_name: Monthly Performance Review
+cadence: monthly
+estimated_minutes: 90
+target_users:
+  - part-time-swing-trader
+  - long-term-investor
+  - growth-investor
+difficulty: intermediate
+api_profile: no-api-basic
+
+when_to_run: >-
+  First weekend of each month, reviewing the prior month's closed positions,
+  open thesis health, and process improvements. Closes the
+  Plan -> Trade -> Record -> Review -> Improve loop.
+when_not_to_run: >-
+  Do not skip this review even in losing months — that is when it matters most.
+  Do not run weekly; the monthly cadence is intentional to filter noise.
+
+required_skills:
+  - trader-memory-core
+  - signal-postmortem
+optional_skills:
+  - trade-performance-coach
+  - backtest-expert
+  - dual-axis-skill-reviewer
+
+artifacts:
+  - id: monthly_aggregate
+    produced_by_step: 1
+    required: true
+  - id: aggregate_postmortem
+    produced_by_step: 2
+    required: true
+  - id: monthly_performance_coach_report
+    produced_by_step: 3
+    required: false
+  - id: monthly_behavior_patterns
+    produced_by_step: 3
+    required: false
+  - id: next_month_operating_rules
+    produced_by_step: 3
+    required: false
+  - id: hypothesis_revalidation
+    produced_by_step: 4
+    required: false
+  - id: skill_review_findings
+    produced_by_step: 5
+    required: false
+  - id: monthly_decision_log
+    produced_by_step: 6
+    required: true
+  - id: rule_changes_for_next_month
+    produced_by_step: 6
+    required: true
+  - id: skill_improvement_backlog
+    produced_by_step: 6
+    required: false
+
+# final_outputs separates trade-side improvements from repo-side improvements.
+# Schema-spec: this is an informational summary; validator does not enforce it.
+final_outputs:
+  - id: monthly_decision_log
+    description: What trades worked / what did not, by category
+  - id: rule_changes_for_next_month
+    description: Adjustments to position sizing, entry rules, regime gates
+  - id: skill_improvement_backlog
+    description: Optional feedback into repo improvement loop (skills / workflows)
+
+steps:
+  - step: 1
+    name: Aggregate the month's trades and theses
+    skill: trader-memory-core
+    produces:
+      - monthly_aggregate
+    decision_gate: false
+
+  - step: 2
+    name: Pattern-level postmortem across the month
+    skill: signal-postmortem
+    consumes:
+      - monthly_aggregate
+    produces:
+      - aggregate_postmortem
+    decision_gate: true
+    decision_question: >-
+      What recurring patterns appear across the month's outcomes? Classify by
+      thesis quality, execution, market environment, and randomness.
+
+  - step: 3
+    name: Coach monthly process, risk, and behavior patterns
+    skill: trade-performance-coach
+    optional: true
+    consumes:
+      - monthly_aggregate
+      - aggregate_postmortem
+    produces:
+      - monthly_performance_coach_report
+      - monthly_behavior_patterns
+      - next_month_operating_rules
+    decision_gate: true
+    decision_question: >-
+      Which next-month operating rules should be accepted, modified, deferred,
+      or journaled only?
+
+  - step: 4
+    name: Re-validate hypotheses via backtest
+    skill: backtest-expert
+    optional: true
+    consumes:
+      - aggregate_postmortem
+    produces:
+      - hypothesis_revalidation
+    decision_gate: false
+
+  - step: 5
+    name: Review which skills helped or hurt
+    skill: dual-axis-skill-reviewer
+    optional: true
+    consumes:
+      - aggregate_postmortem
+    produces:
+      - skill_review_findings
+    decision_gate: false
+
+  - step: 6
+    name: Produce decision log and rule changes
+    skill: trader-memory-core
+    consumes:
+      - aggregate_postmortem
+      - hypothesis_revalidation
+      - skill_review_findings
+    produces:
+      - monthly_decision_log
+      - rule_changes_for_next_month
+      - skill_improvement_backlog
+    decision_gate: true
+    decision_question: >-
+      Based on this month's evidence, what specific rules will change next
+      month? Trade-side rules vs repo-side improvements should stay separate.
+
+manual_review:
+  - Distinguish process improvements (rule changes) from outcome accidents (randomness).
+  - Trade-side rule changes apply to the trader's behavior next month.
+  - Skill-side improvements are repo-improvement candidates and may or may not be acted on.
+  - Be willing to delete or downgrade rules that aren't working — not just add new ones.
+
+journal_destination: trader-memory-core

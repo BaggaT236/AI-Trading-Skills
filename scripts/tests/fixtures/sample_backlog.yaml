@@ -1,0 +1,13 @@
+updated_at_utc: "2026-02-28T06:15:00Z"
+ideas:
+  - id: "idea_2026w09_001"
+    title: "Market Breadth Weekly Reporter"
+    description: "Generate weekly market breadth summary reports"
+    category: "reporting"
+    source_project: "claude-trading-skills"
+    source_raw_ids: ["raw_2026w09_001"]
+    scores: {novelty: 60, feasibility: 80, trading_value: 70, composite: 70}
+    status: "pending"
+    created_at: "2026-03-01"
+    attempted_at: null
+    pr_url: null

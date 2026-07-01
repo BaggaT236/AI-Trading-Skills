@@ -1,0 +1,58 @@
+# Documentation Directory
+
+This directory contains project-wide documentation, revision histories, and improvement records.
+
+## Directory Structure
+
+```
+docs/internal/
+├── README.md (this file)
+├── edge_candidate_agent_design.md
+├── edge-institutionalization-process.md
+├── kanchi-dividend-skills-runbook.md
+└── revisions/
+    ├── bubble-detector-v2.0-revision.md
+    ├── Breadth Chart Analyst Skill_IMPROVEMENTS_v2.0.md
+    └── edge_daily_idea_to_strategy_seed_agent_design_archive_2026-02-23.md
+```
+
+## `revisions/`
+
+Contains detailed revision and improvement records for each skill.
+
+### Files:
+
+- **`bubble-detector-v2.0-revision.md`** - Comprehensive improvement summary for Bubble Detector skill v2.0
+  - Problems identified (4 key issues)
+  - Solutions implemented
+  - Comparison of improvements (10 points → 3 points case study)
+  - Important lessons learned
+  - Next steps
+
+## Usage
+
+When making significant improvements to a skill:
+
+1. Document the revision in `revisions/[skill-name]-[version]-revision.md`
+2. Include:
+   - Problems identified
+   - Solutions implemented
+   - Before/after comparison
+   - Lessons learned
+3. Reference the revision document in the skill's main documentation if needed
+
+## Related Directories
+
+- `/[skill-name]/references/` - Skill-specific reference materials
+- `/[skill-name]/SKILL.md` - Main skill definition (auto-loaded by Claude Code)
+
+## Runbooks
+
+- **`kanchi-dividend-skills-runbook.md`** - 運用順序固定用の手順書
+  - 3スキルの実行順序 (`SOP -> 監視 -> 税務/口座配置`)
+  - 日次/週次/月次/四半期/年次の運用リズム
+  - スキル間の入力/出力受け渡し
+- **`edge-institutionalization-process.md`** - エッジのインスティチューション化手順
+  - `観察 -> 抽象化 -> 戦略化 -> パイプライン` の分業フロー
+  - 進級ステート（Hint/Ticket/Concept/Draft/Candidate/Live）
+  - Concept/Draft/Pipeline/Promotion のゲート基準

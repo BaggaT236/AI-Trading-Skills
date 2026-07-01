@@ -1,0 +1,1326 @@
+schema_version: 1
+categories:
+- market-regime
+- core-portfolio
+- swing-opportunity
+- trade-planning
+- trade-memory
+- strategy-research
+- advanced-satellite
+- meta
+skills:
+- id: backtest-expert
+  display_name: Backtest Expert
+  category: strategy-research
+  status: production
+  summary: Expert guidance for systematic backtesting of trading strategies.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: user_input
+    type: local_file
+    requirement: required
+    note: User provides strategy parameters
+  inputs:
+  - strategy_parameters
+  - historical_ohlcv
+  outputs:
+  - backtest_report
+  - performance_metrics
+  workflows:
+  - trade-memory-loop
+  - monthly-performance-review
+- id: breadth-chart-analyst
+  display_name: Breadth Chart Analyst
+  category: market-regime
+  status: production
+  summary: This skill should be used when analyzing market breadth charts, specifically the S&P 500 Breadth
+    Index (200-Day MA based) and the US Stock Market Uptrend Stock Ratio charts.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: chart_image
+    type: image
+    requirement: required
+    note: Chart screenshot input
+  inputs:
+  - breadth_chart_image
+  outputs:
+  - breadth_assessment_report
+  workflows: []
+- id: breakout-trade-planner
+  display_name: Breakout Trade Planner
+  category: swing-opportunity
+  status: production
+  summary: Generate Minervini-style breakout trade plans from VCP screener output with worst-case risk
+    calculation, portfolio heat management, and Alpaca-compatible order templates (stop-limit bracket
+    for pre-placement, limit bracket for post-confi...
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Consumes VCP screener output; pure calculation + Alpaca order templates
+  inputs:
+  - vcp_candidates
+  - account_size
+  outputs:
+  - entry_plan
+  - alpaca_order_template
+  workflows:
+  - swing-opportunity-daily
+- id: canslim-screener
+  display_name: CANSLIM Screener
+  category: swing-opportunity
+  status: production
+  summary: Screen US stocks using William O'Neil's CANSLIM growth stock methodology.
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: US stock fundamentals via FMP
+  inputs:
+  - screener_universe
+  - fundamentals_data
+  outputs:
+  - canslim_candidates
+  - composite_scores
+  workflows:
+  - swing-opportunity-daily
+- id: data-quality-checker
+  display_name: Data Quality Checker
+  category: meta
+  status: production
+  summary: Validate data quality in market analysis documents and blog articles before publication.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Local markdown validation; works offline
+  inputs:
+  - markdown_document
+  outputs:
+  - quality_report
+  - issue_list
+  workflows: []
+- id: dividend-growth-pullback-screener
+  display_name: Dividend Growth Pullback Screener
+  category: core-portfolio
+  status: production
+  summary: Use this skill to find high-quality dividend growth stocks (12%+ annual dividend growth, 1.5%+
+    yield) that are experiencing temporary pullbacks, identified by RSI oversold conditions (RSI ≤40).
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  - id: finviz
+    type: screener
+    requirement: recommended
+    note: FINVIZ Elite API
+  inputs:
+  - dividend_universe
+  - rsi_thresholds
+  outputs:
+  - pullback_candidates
+  - yield_growth_metrics
+  workflows: []
+- id: downtrend-duration-analyzer
+  display_name: Downtrend Duration Analyzer
+  category: market-regime
+  status: production
+  summary: Analyze historical downtrend durations and generate interactive HTML histograms showing typical
+    correction lengths by sector and market cap.
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Duration analysis from market data; pure calculation
+  inputs:
+  - historical_correction_data
+  outputs:
+  - duration_histogram_html
+  - sector_breakdown
+  workflows: []
+- id: dual-axis-skill-reviewer
+  display_name: Dual Axis Skill Reviewer
+  category: meta
+  status: production
+  summary: 'Review skills in any project using a dual-axis method: (1) deterministic code-based checks
+    (structure, scripts, tests, execution safety) and (2) LLM deep review findings.'
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Deterministic scoring + optional LLM review
+  inputs:
+  - skill_source_tree
+  outputs:
+  - dual_axis_score_report
+  workflows:
+  - monthly-performance-review
+- id: earnings-calendar
+  display_name: Earnings Calendar
+  category: meta
+  status: production
+  summary: This skill retrieves upcoming earnings announcements for US stocks using the Financial Modeling
+    Prep (FMP) API.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - date_range
+  - market_cap_filter
+  outputs:
+  - earnings_calendar_report
+  workflows: []
+- id: earnings-trade-analyzer
+  display_name: Earnings Trade Analyzer
+  category: advanced-satellite
+  status: production
+  summary: Analyze recent post-earnings stocks using a 5-factor scoring system (Gap Size, Pre-Earnings
+    Trend, Volume Trend, MA200 Position, MA50 Position).
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - recent_earnings_universe
+  outputs:
+  - scored_candidates
+  - five_factor_grades
+  workflows: []
+- id: economic-calendar-fetcher
+  display_name: Economic Calendar Fetcher
+  category: meta
+  status: production
+  summary: Fetch upcoming economic events and data releases using FMP API.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - date_range
+  outputs:
+  - economic_events_report
+  workflows: []
+- id: edge-candidate-agent
+  display_name: Edge Candidate Agent
+  category: strategy-research
+  status: production
+  summary: Generate and prioritize US equity long-side edge research tickets from EOD observations, then
+    export pipeline-ready candidate specs for trade-strategy-pipeline Phase I.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: optional
+    note: Optional OHLCV via FMP for edge ticket export
+  inputs:
+  - eod_observations
+  outputs:
+  - market_summary_json
+  - anomalies_json
+  - tickets_dir
+  workflows: []
+- id: edge-concept-synthesizer
+  display_name: Edge Concept Synthesizer
+  category: strategy-research
+  status: production
+  summary: Abstract detector tickets and hints into reusable edge concepts with thesis, invalidation signals,
+    and strategy playbooks before strategy design/export.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Synthesizes detector tickets and hints into edge concepts
+  inputs:
+  - tickets_dir
+  - hints_yaml
+  outputs:
+  - edge_concepts_yaml
+  workflows: []
+- id: edge-hint-extractor
+  display_name: Edge Hint Extractor
+  category: strategy-research
+  status: production
+  summary: Extract edge hints from daily market observations and news reactions, with optional LLM ideation,
+    and output canonical hints.yaml for downstream concept synthesis and auto detection.
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Extracts hints from observations/news; pure calculation
+  inputs:
+  - market_summary_json
+  - anomalies_json
+  outputs:
+  - hints_yaml
+  workflows: []
+- id: edge-pipeline-orchestrator
+  display_name: Edge Pipeline Orchestrator
+  category: strategy-research
+  status: production
+  summary: Orchestrate the full edge research pipeline from candidate detection through strategy design,
+    review, revision, and export.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Orchestrates edge pipeline subskills via subprocess
+  inputs:
+  - tickets_dir
+  - market_summary
+  - anomalies
+  outputs:
+  - pipeline_report
+  - exported_strategies
+  workflows: []
+- id: edge-signal-aggregator
+  display_name: Edge Signal Aggregator
+  category: strategy-research
+  status: production
+  summary: Aggregate and rank signals from multiple edge-finding skills (edge-candidate-agent, theme-detector,
+    sector-analyst, institutional-flow-tracker) into a prioritized conviction dashboard with weighted
+    scoring, deduplication, and contradicti...
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Aggregates signals from edge-finding skills
+  inputs:
+  - edge_candidate_outputs
+  - theme_outputs
+  - sector_outputs
+  outputs:
+  - conviction_dashboard
+  workflows: []
+- id: edge-strategy-designer
+  display_name: Edge Strategy Designer
+  category: strategy-research
+  status: production
+  summary: Convert abstract edge concepts into strategy draft variants and optional exportable ticket
+    YAMLs for edge-candidate-agent export/validation.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Converts edge concepts into strategy drafts
+  inputs:
+  - edge_concepts_yaml
+  outputs:
+  - strategy_drafts_yaml
+  workflows: []
+- id: edge-strategy-reviewer
+  display_name: Edge Strategy Reviewer
+  category: strategy-research
+  status: production
+  summary: Critically review strategy drafts from edge-strategy-designer for edge plausibility, overfitting
+    risk, sample size adequacy, and execution realism.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Deterministic scoring on local YAML drafts
+  inputs:
+  - strategy_drafts_yaml
+  outputs:
+  - review_yaml
+  - verdict_list
+  workflows: []
+- id: exposure-coach
+  display_name: Exposure Coach
+  category: market-regime
+  status: production
+  summary: Generate a one-page Market Posture summary with net exposure ceiling, growth-vs-value bias,
+    participation breadth, and new-entry-allowed vs cash-priority recommendation by integrating signals
+    from breadth, regime, and flow analysis skills.
+  timeframe: daily
+  difficulty: beginner
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Synthesizes signals from other skills; pure calculation
+  inputs:
+  - market_breadth_report
+  - uptrend_report
+  - top_risk_report
+  outputs:
+  - exposure_decision
+  workflows:
+  - market-regime-daily
+- id: finviz-screener
+  display_name: Finviz Screener
+  category: swing-opportunity
+  status: production
+  summary: Build and open FinViz screener URLs from natural language requests.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: finviz
+    type: screener
+    requirement: optional
+    note: FINVIZ Elite API
+  inputs:
+  - natural_language_query
+  outputs:
+  - finviz_url
+  - filter_codes
+  workflows: []
+- id: ftd-detector
+  display_name: FTD Detector
+  category: market-regime
+  status: production
+  summary: Detects Follow-Through Day (FTD) signals for market bottom confirmation using William O'Neil's
+    methodology.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Daily QQQ/SPY OHLCV via FMP
+  inputs:
+  - sp500_ohlcv
+  - nasdaq_ohlcv
+  outputs:
+  - ftd_signal_report
+  workflows: []
+- id: ibd-distribution-day-monitor
+  display_name: IBD Distribution Day Monitor
+  category: market-regime
+  status: production
+  summary: Detect IBD-style Distribution Days for QQQ/SPY (close down at least 0.2% on higher volume),
+    track 25-session expiration and 5% invalidation, count d5/d15/d25 clusters, classify market risk (NORMAL/CAUTION/HIGH/SEVERE),
+    and emit TQQQ/QQQ...
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - qqq_ohlcv
+  - spy_ohlcv
+  outputs:
+  - distribution_day_count_report
+  workflows: []
+- id: institutional-flow-tracker
+  display_name: Institutional Flow Tracker
+  category: advanced-satellite
+  status: production
+  summary: Use this skill to track institutional investor ownership changes and portfolio flows using
+    13F filings data.
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - 13f_filings
+  - fund_universe
+  outputs:
+  - flow_analysis_report
+  workflows: []
+- id: kanchi-dividend-review-monitor
+  display_name: Kanchi Dividend Review Monitor
+  category: core-portfolio
+  status: production
+  summary: Monitor dividend portfolios with Kanchi-style forced-review triggers (T1-T5) and convert anomalies
+    into OK/WARN/REVIEW states without auto-selling.
+  timeframe: weekly
+  difficulty: beginner
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: recommended
+    note: Dividend / price monitoring via FMP
+  inputs:
+  - holdings_snapshot
+  outputs:
+  - t1_t5_anomaly_findings
+  - review_queue
+  workflows:
+  - core-portfolio-weekly
+- id: kanchi-dividend-sop
+  display_name: Kanchi Dividend SOP
+  category: core-portfolio
+  status: production
+  summary: Convert Kanchi-style dividend investing into a repeatable US-stock operating procedure.
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: recommended
+    note: US dividend stock data via FMP
+  inputs:
+  - screener_universe
+  - sector_filter
+  outputs:
+  - kanchi_candidates
+  - stock_memo
+  workflows: []
+- id: kanchi-dividend-us-tax-accounting
+  display_name: Kanchi Dividend US Tax Accounting
+  category: core-portfolio
+  status: production
+  summary: Provide US dividend tax and account-location workflow for Kanchi-style income portfolios.
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: US tax workflow guidance; pure calculation
+  inputs:
+  - dividend_distributions
+  - 1099_div
+  outputs:
+  - qualified_ordinary_classification
+  - account_location_advice
+  workflows:
+  - core-portfolio-weekly
+- id: macro-regime-detector
+  display_name: Macro Regime Detector
+  category: market-regime
+  status: production
+  summary: Detect structural macro regime transitions (1-2 year horizon) using cross-asset ratio analysis.
+  timeframe: weekly
+  difficulty: advanced
+  integrations:
+  - id: yfinance_or_csv
+    type: market_data
+    requirement: recommended
+    note: Cross-asset ratio data via yfinance or local CSV
+  inputs:
+  - cross_asset_ratios
+  - yield_curve_data
+  outputs:
+  - regime_transition_report
+  workflows:
+  - market-regime-daily
+- id: market-breadth-analyzer
+  display_name: Market Breadth Analyzer
+  category: market-regime
+  status: production
+  summary: Quantifies market breadth health using TraderMonty's public CSV data.
+  timeframe: daily
+  difficulty: beginner
+  integrations:
+  - id: public_csv
+    type: local_file
+    requirement: required
+    note: TraderMonty public CSV; no API key required
+  inputs:
+  - public_breadth_csv
+  outputs:
+  - breadth_composite_score
+  - component_breakdown
+  workflows:
+  - market-regime-daily
+- id: market-environment-analysis
+  display_name: Market Environment Analysis
+  category: market-regime
+  status: production
+  summary: Comprehensive market environment analysis and reporting tool.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: websearch
+    type: web
+    requirement: required
+    note: Global market data via WebSearch / WebFetch
+  - id: chart_image
+    type: image
+    requirement: optional
+    note: Optional chart image inputs for technical interpretation
+  inputs:
+  - global_market_data
+  - chart_image
+  outputs:
+  - market_environment_report
+  workflows: []
+- id: market-news-analyst
+  display_name: Market News Analyst
+  category: market-regime
+  status: production
+  summary: This skill should be used when analyzing recent market-moving news events and their impact
+    on equity markets and commodities.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: websearch
+    type: web
+    requirement: required
+    note: Web search / fetch
+  inputs:
+  - news_search_query
+  - date_range
+  outputs:
+  - news_impact_report
+  workflows: []
+- id: market-top-detector
+  display_name: Market Top Detector
+  category: market-regime
+  status: production
+  summary: Detects market top probability using O'Neil Distribution Days, Minervini Leading Stock Deterioration,
+    and Monty Defensive Sector Rotation.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: public_csv
+    type: local_file
+    requirement: required
+    note: Public market data CSVs; no API key required
+  inputs:
+  - public_market_data_csv
+  outputs:
+  - market_top_composite_score
+  workflows:
+  - market-regime-daily
+- id: options-strategy-advisor
+  display_name: Options Strategy Advisor
+  category: advanced-satellite
+  status: production
+  summary: Options trading strategy analysis and simulation tool.
+  timeframe: event-driven
+  difficulty: advanced
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: optional
+    note: Financial Modeling Prep API
+  inputs:
+  - ticker
+  - strategy_type
+  - stock_data
+  outputs:
+  - greeks
+  - pnl_simulation
+  - strategy_comparison
+  workflows: []
+- id: pair-trade-screener
+  display_name: Pair Trade Screener
+  category: advanced-satellite
+  status: production
+  summary: Statistical arbitrage tool for identifying and analyzing pair trading opportunities.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - sector_universe
+  - lookback_period
+  outputs:
+  - cointegrated_pairs
+  - zscore_signals
+  workflows: []
+- id: parabolic-short-trade-planner
+  display_name: Parabolic Short Trade Planner
+  category: advanced-satellite
+  status: production
+  summary: Screen US equities for parabolic exhaustion patterns and generate conditional pre-market short
+    plans, then evaluate intraday trigger fires from live 5-min bars.
+  timeframe: event-driven
+  difficulty: advanced
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  - id: alpaca
+    type: broker
+    requirement: optional
+    note: Alpaca brokerage MCP/API
+  inputs:
+  - screener_universe
+  - alpaca_inventory
+  outputs:
+  - pre_market_plan
+  - intraday_trigger_state
+  workflows: []
+- id: pead-screener
+  display_name: PEAD Screener
+  category: advanced-satellite
+  status: production
+  summary: Screen post-earnings gap-up stocks for PEAD (Post-Earnings Announcement Drift) patterns.
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  inputs:
+  - earnings_candidates
+  - weekly_ohlcv
+  outputs:
+  - pead_signal_list
+  - breakout_triggers
+  workflows: []
+- id: portfolio-manager
+  display_name: Portfolio Manager
+  category: core-portfolio
+  status: production
+  summary: Comprehensive portfolio analysis using Alpaca MCP Server integration to fetch holdings and
+    positions, then analyze asset allocation, risk metrics, individual stock positions, diversification,
+    and generate rebalancing recommendations.
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: alpaca
+    type: broker
+    requirement: required
+    note: Alpaca brokerage MCP/API
+  inputs:
+  - alpaca_holdings
+  outputs:
+  - allocation_report
+  - rebalance_actions
+  workflows:
+  - core-portfolio-weekly
+- id: position-sizer
+  display_name: Position Sizer
+  category: trade-planning
+  status: production
+  summary: Calculate risk-based position sizes for long stock trades.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Pure calculation; works offline
+  inputs:
+  - entry_price
+  - stop_price
+  - account_size
+  outputs:
+  - share_count
+  - risk_amount
+  workflows:
+  - swing-opportunity-daily
+- id: scenario-analyzer
+  display_name: Scenario Analyzer
+  category: strategy-research
+  status: production
+  summary: Analyze 18-month scenarios from news headlines via scenario-analyst agent with strategy-reviewer
+    second opinion; outputs primary/secondary/tertiary impact analysis and stock picks.
+  timeframe: event-driven
+  difficulty: advanced
+  integrations:
+  - id: websearch
+    type: web
+    requirement: required
+    note: Headline / news search via WebSearch
+  inputs:
+  - news_headline
+  outputs:
+  - scenario_report
+  - stock_picks
+  - review_yaml
+  workflows: []
+- id: sector-analyst
+  display_name: Sector Analyst
+  category: market-regime
+  status: production
+  summary: This skill should be used when analyzing sector rotation patterns and market cycle positioning.
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: chart_image
+    type: image
+    requirement: required
+    note: Chart screenshot input
+  inputs:
+  - sector_uptrend_csv
+  - chart_image
+  outputs:
+  - rotation_assessment_report
+  workflows: []
+- id: signal-postmortem
+  display_name: Signal Postmortem
+  category: trade-memory
+  status: production
+  summary: Record and analyze post-trade outcomes for signals generated by edge pipeline and other skills.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Postmortem framework; pure calculation
+  inputs:
+  - closed_thesis_record
+  outputs:
+  - postmortem_findings
+  workflows:
+  - trade-memory-loop
+  - monthly-performance-review
+- id: skill-designer
+  display_name: Skill Designer
+  category: meta
+  status: production
+  summary: Design new Claude skills from structured idea specifications.
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Generates skill scaffolding from idea specs
+  inputs:
+  - idea_specification
+  outputs:
+  - skill_scaffolding
+  workflows: []
+- id: skill-idea-miner
+  display_name: Skill Idea Miner
+  category: meta
+  status: production
+  summary: Mine Claude Code session logs for skill idea candidates.
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Mines session logs for skill ideas
+  inputs:
+  - session_logs
+  outputs:
+  - skill_idea_backlog_yaml
+  workflows: []
+- id: skill-integration-tester
+  display_name: Skill Integration Tester
+  category: meta
+  status: production
+  summary: Validate multi-skill workflows defined in CLAUDE.md by checking skill existence, inter-skill
+    data contracts (JSON schema compatibility), file naming conventions, and handoff integrity.
+  timeframe: research
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Validates multi-skill workflow contracts
+  inputs:
+  - claude_md
+  - skill_outputs
+  outputs:
+  - workflow_validation_report
+  workflows: []
+- id: stanley-druckenmiller-investment
+  display_name: Stanley Druckenmiller Investment
+  category: strategy-research
+  status: production
+  summary: Druckenmiller Strategy Synthesizer - Integrates 8 upstream skill outputs (Market Breadth, Uptrend
+    Analysis, Market Top, Macro Regime, FTD Detector, VCP Screener, Theme Detector, CANSLIM Screener)
+    into a unified conviction score (0-100),...
+  timeframe: weekly
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Synthesizes outputs from upstream skills; pure calculation
+  inputs:
+  - upstream_skill_outputs
+  - exposure_decision
+  outputs:
+  - druckenmiller_synthesis_report
+  workflows: []
+- id: stockbee-20pct-study
+  display_name: Stockbee 20% Study
+  category: strategy-research
+  status: beta
+  summary: Build a daily Stockbee-style +20%/-20% mover event study, classify catalysts and setup context,
+    update forward outcomes, and export evidence-backed edge hints without treating movers as buy/sell signals.
+  timeframe: daily
+  difficulty: advanced
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Live US universe, daily OHLCV, symbol profile, and optional historical backfill data
+  - id: prices_json
+    type: local_file
+    requirement: optional
+    note: Offline OHLCV JSON fallback for no-API backfills and tests
+  - id: news_events_json
+    type: local_file
+    requirement: optional
+    note: Optional catalyst/event records for higher-quality classification
+  - id: websearch
+    type: web
+    requirement: optional
+    note: Optional manual catalyst enrichment when structured event data is unavailable
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Event detection, outcome updates, cohort statistics, and report generation
+  inputs:
+  - daily_ohlcv_universe
+  - optional_news_events
+  - market_regime_report
+  - twenty_pct_study_db
+  outputs:
+  - twenty_pct_mover_events
+  - classified_event_study
+  - matured_event_outcomes
+  - twenty_pct_cohort_summary
+  - edge_hints_yaml
+  workflows:
+  - stockbee-20pct-study-daily
+- id: stockbee-episodic-pivot-analyzer
+  display_name: Stockbee Episodic Pivot Analyzer
+  category: advanced-satellite
+  status: beta
+  summary: Analyze Stockbee-style Day 1 Episodic Pivot candidates from earnings, guidance, M&A, FDA,
+    analyst, contract, product, short-squeeze, and story/theme catalysts using catalyst quality,
+    gap/range expansion, volume shock, neglect/revaluation context, liquidity, and EP-day-low risk.
+  timeframe: event-driven
+  difficulty: advanced
+  integrations:
+  - id: catalyst_events_json
+    type: local_file
+    requirement: required
+    note: User-provided or upstream-generated catalyst/event records; the skill does not discover news by itself
+  - id: fmp
+    type: market_data
+    requirement: optional
+    note: Optional OHLCV/profile enrichment via Financial Modeling Prep
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Catalyst classification, EP scoring, handoff flags, and report generation
+  inputs:
+  - catalyst_events
+  - earnings_trade_candidates
+  - momentum_burst_candidates
+  - daily_ohlcv
+  outputs:
+  - episodic_pivot_candidates
+  - catalyst_quality_scores
+  - delayed_ep_watchlist
+  - pead_handoff_candidates
+  workflows:
+  - stockbee-ep-daily
+- id: stockbee-exhaustion-hammer-screener
+  display_name: Stockbee Exhaustion Hammer Screener
+  category: swing-opportunity
+  status: beta
+  summary: Screen US stocks for Stockbee-style selling-exhaustion hammer candidates using quality/liquidity
+    gates, prior momentum, pullback depth, undercut/reclaim, hammer geometry, volume confirmation,
+    market gate, and risk-distance filters.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Live US universe, daily OHLCV, and optional quote-derived near-close bar via Financial Modeling Prep
+  - id: prices_json
+    type: local_file
+    requirement: optional
+    note: Offline or near-close provisional OHLCV JSON fallback for no-API screening and tests
+  - id: profiles_json
+    type: local_file
+    requirement: optional
+    note: Optional quality metadata keyed by symbol, such as marketCap and holder counts
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Pullback context, hammer geometry, risk-distance scoring, and report generation
+  inputs:
+  - daily_ohlcv_universe
+  - quality_profiles
+  - market_regime_report
+  - risk_policy
+  outputs:
+  - exhaustion_hammer_candidates
+  - setup_quality_scores
+  - trade_plan_inputs
+  workflows:
+  - swing-opportunity-daily
+- id: stockbee-momentum-burst-screener
+  display_name: Stockbee Momentum Burst Screener
+  category: swing-opportunity
+  status: beta
+  summary: Screen US stocks for Stockbee-style 3-5 day momentum burst candidates using 4% breakout,
+    dollar breakout, range expansion, volume expansion, setup quality, and risk-distance filters.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Live US universe and daily OHLCV via Financial Modeling Prep
+  - id: prices_json
+    type: local_file
+    requirement: optional
+    note: Offline OHLCV JSON fallback for no-API screening and tests
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Trigger detection, setup scoring, risk-distance checks, and report generation
+  inputs:
+  - daily_ohlcv_universe
+  - market_regime_report
+  - risk_policy
+  outputs:
+  - momentum_burst_candidates
+  - setup_quality_scores
+  - trade_plan_inputs
+  workflows:
+  - swing-opportunity-daily
+- id: stockbee-setup-fluency-trainer
+  display_name: Stockbee Setup Fluency Trainer
+  category: trade-memory
+  status: beta
+  summary: Build a Stockbee-style setup model book from momentum-burst screener candidates, then update
+    3-day and 5-day forward outcomes with MFE/MAE, stop-hit status, outcome tags, and cohort statistics.
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: prices_json
+    type: local_file
+    requirement: optional
+    note: Offline OHLCV JSON for no-API 3/5-day outcome updates
+  - id: fmp
+    type: market_data
+    requirement: optional
+    note: Financial Modeling Prep daily OHLCV for automatic outcome updates when local prices are unavailable
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: JSONL model-book upsert, MFE/MAE calculation, outcome tagging, and cohort statistics
+  inputs:
+  - momentum_burst_candidates
+  - daily_ohlcv_by_symbol
+  - model_book_jsonl
+  outputs:
+  - stockbee_model_book
+  - matured_setup_outcomes
+  - setup_fluency_summary
+  - rule_candidates
+  workflows:
+  - stockbee-fluency-loop
+- id: strategy-pivot-designer
+  display_name: Strategy Pivot Designer
+  category: strategy-research
+  status: production
+  summary: Detect backtest iteration stagnation and generate structurally different strategy pivot proposals
+    when parameter tuning reaches a local optimum.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Pivot proposal generator; pure calculation
+  inputs:
+  - backtest_iteration_history
+  outputs:
+  - pivot_proposals
+  workflows: []
+- id: technical-analyst
+  display_name: Technical Analyst
+  category: trade-planning
+  status: production
+  summary: This skill should be used when analyzing weekly price charts for stocks, stock indices, cryptocurrencies,
+    or forex pairs.
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: chart_image
+    type: image
+    requirement: required
+    note: Chart screenshot input
+  inputs:
+  - weekly_chart_image
+  outputs:
+  - technical_assessment_report
+  workflows:
+  - swing-opportunity-daily
+- id: theme-detector
+  display_name: Theme Detector
+  category: swing-opportunity
+  status: production
+  summary: Detect and analyze trending market themes across sectors.
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: optional
+    note: Financial Modeling Prep API
+  - id: finviz
+    type: screener
+    requirement: recommended
+    note: FINVIZ Elite API
+  inputs:
+  - theme_universe
+  - sector_data
+  outputs:
+  - theme_heat_scores
+  - trending_themes
+  workflows:
+  - swing-opportunity-daily
+- id: trade-hypothesis-ideator
+  display_name: Trade Hypothesis Ideator
+  category: trade-memory
+  status: production
+  summary: Generate falsifiable trade strategy hypotheses from market data, trade logs, and journal snippets
+    with ranked hypothesis cards and optional strategy.yaml export.
+  timeframe: research
+  difficulty: advanced
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Hypothesis generation from journal/data inputs; pure calculation
+  inputs:
+  - market_data_bundle
+  - journal_snippets
+  outputs:
+  - hypothesis_cards
+  - strategy_yaml
+  workflows: []
+- id: trade-performance-coach
+  display_name: Trade Performance Coach
+  category: trade-memory
+  status: beta
+  summary: Review closed trades, partial exits, and monthly aggregates for process adherence,
+    risk discipline, execution quality, and evidence-based trading behavior patterns, then
+    produce next-session operating rules.
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Works from local trader-memory / postmortem / journal records; no network or paid
+      API required
+  inputs:
+  - closed_thesis_record
+  - postmortem_findings
+  - trade_journal_entries
+  - risk_plan
+  outputs:
+  - performance_coach_report
+  - behavioral_pattern_tags
+  - risk_manager_notes
+  - next_session_operating_rules
+  workflows:
+  - trade-memory-loop
+  - monthly-performance-review
+- id: trader-memory-core
+  display_name: Trader Memory Core
+  category: trade-memory
+  status: production
+  summary: Track investment theses across their lifecycle — from screening idea to closed position with
+    postmortem.
+  timeframe: event-driven
+  difficulty: beginner
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: optional
+    note: Financial Modeling Prep API
+  inputs:
+  - screener_report
+  - trade_actions
+  outputs:
+  - thesis_record
+  - journal_entry
+  workflows:
+  - core-portfolio-weekly
+  - swing-opportunity-daily
+  - trade-memory-loop
+  - monthly-performance-review
+- id: trading-skills-navigator
+  display_name: Trading Skills Navigator
+  category: meta
+  status: production
+  summary: Recommend the right workflow, skillset, API profile, and setup path from a natural-language
+    trading goal.
+  timeframe: research
+  difficulty: beginner
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Reads local skills-index.yaml + workflows/*.yaml (or bundled snapshot); no network
+  inputs:
+  - user_goal
+  - optional_constraints
+  outputs:
+  - workflow_recommendation
+  - skillset_recommendation
+  - setup_path
+  workflows: []
+- id: uptrend-analyzer
+  display_name: Uptrend Analyzer
+  category: market-regime
+  status: production
+  summary: Analyzes market breadth using Monty's Uptrend Ratio Dashboard data to diagnose the current
+    market environment.
+  timeframe: daily
+  difficulty: beginner
+  integrations:
+  - id: public_csv
+    type: local_file
+    requirement: required
+    note: Monty Uptrend Ratio Dashboard CSV; no API key required
+  inputs:
+  - uptrend_ratio_csv
+  outputs:
+  - uptrend_composite_score
+  workflows:
+  - market-regime-daily
+- id: us-market-bubble-detector
+  display_name: US Market Bubble Detector
+  category: market-regime
+  status: production
+  summary: Evaluates market bubble risk through quantitative data-driven analysis using the revised Minsky/Kindleberger
+    framework v2.1.
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: user_input
+    type: local_file
+    requirement: required
+    note: User provides indicators
+  inputs:
+  - bubble_indicators_data
+  outputs:
+  - bubble_risk_score
+  workflows: []
+- id: us-stock-analysis
+  display_name: US Stock Analysis
+  category: trade-planning
+  status: production
+  summary: Comprehensive US stock analysis including fundamental analysis (financial metrics, business
+    quality, valuation), technical analysis (indicators, chart patterns, support/resistance), stock comparisons,
+    and investment report generation.
+  timeframe: event-driven
+  difficulty: intermediate
+  integrations:
+  - id: user_input
+    type: local_file
+    requirement: required
+    note: User provides data
+  inputs:
+  - ticker
+  - fundamentals_data
+  - chart_image
+  outputs:
+  - stock_analysis_report
+  workflows: []
+- id: value-dividend-screener
+  display_name: Value Dividend Screener
+  category: core-portfolio
+  status: production
+  summary: Screen US stocks for high-quality dividend opportunities combining value characteristics (P/E
+    ratio under 20, P/B ratio under 2), attractive yields (3% or higher), and consistent growth (dividend/revenue/EPS
+    trending up over 3 years).
+  timeframe: weekly
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: Financial Modeling Prep API
+  - id: finviz
+    type: screener
+    requirement: recommended
+    note: FINVIZ Elite API
+  inputs:
+  - dividend_universe
+  - value_filters
+  outputs:
+  - high_yield_candidates
+  workflows:
+  - core-portfolio-weekly
+- id: vcp-screener
+  display_name: VCP Screener
+  category: swing-opportunity
+  status: production
+  summary: Screen S&P 500 stocks for Mark Minervini's Volatility Contraction Pattern (VCP).
+  timeframe: daily
+  difficulty: intermediate
+  integrations:
+  - id: fmp
+    type: market_data
+    requirement: required
+    note: S&P 500 OHLCV via FMP
+  inputs:
+  - sp500_ohlcv
+  outputs:
+  - vcp_candidates
+  - pivot_points
+  workflows:
+  - swing-opportunity-daily
+- id: weekly-performance-digest
+  display_name: Weekly Performance Digest
+  category: trade-memory
+  status: production
+  summary: Generate a weekly performance summary from closed trades with win rate, expectancy, and pattern analysis.
+  timeframe: weekly
+  difficulty: beginner
+  integrations:
+  - id: local_calculation
+    type: calculation
+    requirement: not_required
+    note: Pure calculation; works offline
+  inputs:
+  - closed_thesis_record
+  outputs:
+  - weekly_performance_digest
+  - performance_pattern_analysis
+  workflows:
+  - trade-memory-loop
+  - monthly-performance-review
