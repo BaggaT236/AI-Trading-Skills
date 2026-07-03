@@ -21,9 +21,9 @@ than blocking publication.
 
 ## Prerequisites
 
-- Python 3.9+
+- Node.js 18+
 - No external API keys required
-- No third-party Python packages required (uses only standard library)
+- Run scripts with `npx tsx` (or compile TS to JS first)
 
 ## Workflow
 
@@ -40,7 +40,7 @@ Accept the target markdown file path and optional parameters:
 Run the data quality checker script:
 
 ```bash
-python3 skills/data-quality-checker/scripts/check_data_quality.py \
+npx tsx skills/data-quality-checker/scripts/check_data_quality.ts \
   --file path/to/document.md \
   --output-dir reports/
 ```
@@ -48,7 +48,7 @@ python3 skills/data-quality-checker/scripts/check_data_quality.py \
 To run specific checks only:
 
 ```bash
-python3 skills/data-quality-checker/scripts/check_data_quality.py \
+npx tsx skills/data-quality-checker/scripts/check_data_quality.ts \
   --file path/to/document.md \
   --checks price_scale,dates,allocations
 ```
@@ -57,7 +57,7 @@ To provide a reference date for year inference (useful for documents without
 explicit year in dates):
 
 ```bash
-python3 skills/data-quality-checker/scripts/check_data_quality.py \
+npx tsx skills/data-quality-checker/scripts/check_data_quality.ts \
   --file path/to/document.md \
   --as-of 2026-02-28
 ```
@@ -130,7 +130,7 @@ base. Suggest specific corrections for each issue.
 
 ## Resources
 
-- `scripts/check_data_quality.py` -- Main validation script
+- `scripts/check_data_quality.ts` -- Main validation script
 - `references/instrument_notation_standard.md` -- Notation and price scale reference
 - `references/common_data_errors.md` -- Common error patterns and prevention
 
